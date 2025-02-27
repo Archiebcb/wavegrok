@@ -1,1 +1,11 @@
-flask ccxt scipy matplotlib pandas scikit-learn tensorflow ta numpy seaborn requests
+flask
+ccxt
+scipy
+matplotlib
+pandas
+scikit-learn
+tensorflow
+ta
+numpy
+seaborn
+requests
