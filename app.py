@@ -196,9 +196,11 @@ class WaveGrok:
         ax1.set_title(f"WaveGrok - {timeframe}")
 
         # RSI
+        rsi_value = df['rsi'].iloc[-1]
         ax2.plot(df['rsi'], label='RSI', color='purple')
-        ax2.axhline(70, ls='--', color='red')
-        ax2.axhline(30, ls='--', color='green')
+        ax2.axhline(70, ls='--', color='red', label='Overbought (70)')
+        ax2.axhline(30, ls='--', color='green', label='Oversold (30)')
+        ax2.set_title(f"RSI (14-period): {rsi_value:.2f}")
         ax2.legend()
 
         # MACD
@@ -322,7 +324,9 @@ class WaveGrok:
         self.update_q_table(state, action, reward, state)
         self.epsilon = max(0.1, self.epsilon * 0.995)
 
-        # Comprehensive Report
+        # Comprehensive Report with RSI Enhanced
+        rsi_value = df['rsi'].iloc[-1]
+        rsi_signal = "Overbought (Sell)" if rsi_value > 70 else "Oversold (Buy)" if rsi_value < 30 else "Neutral"
         report = (
             f"WaveGrok Analysis for {symbol} ({primary_tf})\n"
             f"Current Wave: {current_wave}\n"
@@ -334,7 +338,8 @@ class WaveGrok:
             f"Confidence: {confidence:.2%}\n\n"
             f"Technical Signals:\n"
             f"- Trend: {signals['Trend']}\n"
-            f"- Momentum: {signals['Momentum']} (RSI: {df['rsi'].iloc[-1]:.2f}, Stoch: {df['stoch_k'].iloc[-1]:.2f})\n"
+            f"- RSI: {rsi_value:.2f} ({rsi_signal})\n"
+            f"- Momentum: {signals['Momentum']} (RSI: {rsi_value:.2f}, Stoch: {df['stoch_k'].iloc[-1]:.2f})\n"
             f"- Volatility: {signals['Volatility']} (ATR: {df['atr'].iloc[-1]:.2f})\n"
             f"- Volume: {signals['Volume']} (OBV Change: {df['obv'].diff().iloc[-1]:.2f})\n\n"
             f"Trade Executed: {trade_msg}\n"
