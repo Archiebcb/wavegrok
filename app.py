@@ -257,7 +257,9 @@ class WaveGrok:
         ax7 = fig.add_subplot(gs[6])
         ax8 = fig.add_subplot(gs[7])
 
-        mpf.plot(candle_data, type='candle', style='charles', ax=ax1, addplot=apdict, volume=True, fig=fig)
+        # Correct plot call without 'fig' kwarg
+        mpf.plot(candle_data, type='candle', style='charles', ax=ax1, addplot=apdict, volume=True)
+        logging.info(f"Number of addplot items: {len(apdict)}")
 
         ax1.set_title(f"WaveGrok - {timeframe}")
 
