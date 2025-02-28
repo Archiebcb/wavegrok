@@ -44,12 +44,11 @@ class WaveGrok:
         self.gamma = 0.9
 
     def _init_rf_model(self):
-        # Match the 17 features used in analyze_waves
         X = np.array([
-            [0.02, 0.5, 0.1, 0.05, 0.5, 25, 70, 50, 0.1, 0.01, 0.2, 100, 50, -20, 0.3, 0.4, 10],  # Sample 1
-            [0.01, -0.4, -0.1, 0.03, 0.3, 15, 30, 40, -0.2, -0.02, 0.1, -50, 20, -10, -0.2, 0.2, -5],  # Sample 2
-            [0.03, 0.6, 0.2, 0.07, 0.8, 35, 80, 60, 0.3, 0.02, 0.3, 150, 70, 30, 0.4, 0.5, 15],  # Sample 3
-            [-0.02, -0.3, -0.05, 0.04, 0.4, 20, 20, 30, -0.1, -0.01, 0.15, -80, 40, -15, -0.3, 0.3, -8]  # Sample 4
+            [0.02, 0.5, 0.1, 0.05, 0.5, 25, 70, 50, 0.1, 0.01, 0.2, 100, 50, -20, 0.3, 0.4, 10],
+            [0.01, -0.4, -0.1, 0.03, 0.3, 15, 30, 40, -0.2, -0.02, 0.1, -50, 20, -10, -0.2, 0.2, -5],
+            [0.03, 0.6, 0.2, 0.07, 0.8, 35, 80, 60, 0.3, 0.02, 0.3, 150, 70, 30, 0.4, 0.5, 15],
+            [-0.02, -0.3, -0.05, 0.04, 0.4, 20, 20, 30, -0.1, -0.01, 0.15, -80, 40, -15, -0.3, 0.3, -8]
         ])
         y = ["Wave 1", "Wave 2", "Wave 3", "Wave A"]
         model = RandomForestClassifier(n_estimators=200, random_state=42)
@@ -66,7 +65,7 @@ class WaveGrok:
 
     def fetch_data(self, symbol, timeframe, limit):
         if symbol not in self.markets:
-            return f"Invalid ticker '{symbol}' for {self.exchange.name}. Try 'XRP/USD' instead."
+            return f"Invalid ticker '{symbol}' for {self.exchange.name}. Try 'BTC/USD' instead."
         try:
             timeframe_map = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440}
             kraken_interval = timeframe_map.get(timeframe.lower(), 60)
@@ -128,7 +127,7 @@ class WaveGrok:
             self.closes[timeframe] = df['close'].values
             return f"Fetched {limit} {timeframe} candles for {symbol}."
         except Exception as e:
-            return f"Error fetching data from {self.exchange.name}: {str(e)}. Ensure symbol is like 'XRP/USD' and timeframe is valid (e.g., '1h', '4h')."
+            return f"Error fetching data from {self.exchange.name}: {str(e)}. Ensure symbol is like 'BTC/USD' and timeframe is valid (e.g., '1h', '4h')."
 
     def _calculate_fractal(self, closes):
         return (closes.rolling(5).max() - closes.rolling(5).min()) / closes
@@ -192,37 +191,79 @@ class WaveGrok:
         peak_values = closes[self.peaks[timeframe]]
         trough_values = closes[self.troughs[timeframe]]
 
-        fig, axes = mpf.plot(candle_data, type='candle', style='charles', returnfig=True,
-                             figsize=(12, 12), addplot=[
-                                 mpf.make_addplot(pd.Series(peak_values, index=peak_times), type='scatter', markersize=100, marker='x', color='lime'),
-                                 mpf.make_addplot(pd.Series(trough_values, index=trough_times), type='scatter', markersize=100, marker='o', color='magenta'),
-                                 mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--'),
-                                 mpf.make_addplot(df['sma_200'], color='red', linestyle='--')
-                             ])
+        # Candlestick with tons of overlays
+        apdict = [
+            mpf.make_addplot(pd.Series(peak_values, index=peak_times), type='scatter', markersize=100, marker='x', color='lime'),
+            mpf.make_addplot(pd.Series(trough_values, index=trough_times), type='scatter', markersize=100, marker='o', color='magenta'),
+            mpf.make_addplot(df['sma_20'], color='cyan', linestyle='--'),
+            mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--'),
+            mpf.make_addplot(df['sma_200'], color='red', linestyle='--'),
+            mpf.make_addplot(df['ema_9'], color='green', linestyle='-.'),
+            mpf.make_addplot(df['psar'], color='purple', linestyle=':'),
+            mpf.make_addplot(df['bb_upper'], color='orange', linestyle='--'),
+            mpf.make_addplot(df['bb_lower'], color='orange', linestyle='--'),
+            mpf.make_addplot(df['donchian_upper'], color='blue', linestyle='--'),
+            mpf.make_addplot(df['donchian_lower'], color='blue', linestyle='--'),
+            mpf.make_addplot(df['fib_236'], color='pink', linestyle='-'),
+            mpf.make_addplot(df['fib_382'], color='pink', linestyle='-.'),
+            mpf.make_addplot(df['fib_618'], color='pink', linestyle='--')
+        ]
 
-        ax1 = fig.axes[0]
+        fig, axes = mpf.plot(candle_data, type='candle', style='charles', returnfig=True,
+                             figsize=(12, 18), addplot=apdict, volume=True)
+
+        ax1 = fig.axes[0]  # Candlestick axis
         ax1.set_title(f"WaveGrok - {timeframe}")
 
-        ax2 = fig.add_axes([0.125, 0.35, 0.775, 0.15])
-        ax3 = fig.add_axes([0.125, 0.20, 0.775, 0.15])
-        ax4 = fig.add_axes([0.125, 0.05, 0.775, 0.15])
+        # Subplots (adjust positions for more room)
+        ax2 = fig.add_axes([0.125, 0.70, 0.775, 0.10])  # RSI
+        ax3 = fig.add_axes([0.125, 0.60, 0.775, 0.10])  # MACD
+        ax4 = fig.add_axes([0.125, 0.50, 0.775, 0.10])  # ATR
+        ax5 = fig.add_axes([0.125, 0.40, 0.775, 0.10])  # Stochastic
+        ax6 = fig.add_axes([0.125, 0.30, 0.775, 0.10])  # CCI
+        ax7 = fig.add_axes([0.125, 0.20, 0.775, 0.10])  # OBV
+        ax8 = fig.add_axes([0.125, 0.10, 0.775, 0.10])  # CMF
 
+        # RSI
         rsi_value = df['rsi'].iloc[-1]
         ax2.plot(df.index, df['rsi'], label='RSI', color='purple')
-        ax2.axhline(70, ls='--', color='red', label='Overbought (70)')
-        ax2.axhline(30, ls='--', color='green', label='Oversold (30)')
-        ax2.set_title(f"RSI (14): {rsi_value:.2f}")
+        ax2.axhline(70, ls='--', color='red')
+        ax2.axhline(30, ls='--', color='green')
+        ax2.set_title(f"RSI: {rsi_value:.2f}")
         ax2.legend()
 
+        # MACD
         ax3.plot(df.index, df['macd'], label='MACD', color='blue')
         ax3.plot(df.index, df['macd_signal'], label='Signal', color='orange')
         ax3.bar(df.index, df['macd_histogram'], label='Histogram', color='gray', alpha=0.5)
         ax3.legend()
 
+        # ATR
         atr_value = df['atr'].iloc[-1]
         ax4.plot(df.index, df['atr'], label='ATR', color='orange')
-        ax4.set_title(f"ATR (14): {atr_value:.2f}")
+        ax4.set_title(f"ATR: {atr_value:.2f}")
         ax4.legend()
+
+        # Stochastic
+        ax5.plot(df.index, df['stoch_k'], label='%K', color='blue')
+        ax5.plot(df.index, df['stoch_d'], label='%D', color='red', linestyle='--')
+        ax5.set_title(f"Stoch %K: {df['stoch_k'].iloc[-1]:.2f}, %D: {df['stoch_d'].iloc[-1]:.2f}")
+        ax5.legend()
+
+        # CCI
+        ax6.plot(df.index, df['cci'], label='CCI', color='green')
+        ax6.set_title(f"CCI: {df['cci'].iloc[-1]:.2f}")
+        ax6.legend()
+
+        # OBV
+        ax7.plot(df.index, df['obv'], label='OBV', color='purple')
+        ax7.set_title(f"OBV Change: {df['obv'].diff().iloc[-1]:.2f}")
+        ax7.legend()
+
+        # CMF
+        ax8.plot(df.index, df['cmf'], label='CMF', color='cyan')
+        ax8.set_title(f"CMF: {df['cmf'].iloc[-1]:.4f}")
+        ax8.legend()
 
         img = io.BytesIO()
         fig.savefig(img, format='png', bbox_inches='tight')
@@ -374,7 +415,8 @@ class WaveGrok:
             f"- Fib 23.6%: {df['fib_236'].iloc[-1]:.2f}\n"
             f"- Fib 38.2%: {df['fib_382'].iloc[-1]:.2f}\n"
             f"- Fib 61.8%: {df['fib_618'].iloc[-1]:.2f}\n"
-            f"- Pivot High: {df['pivot_high'].iloc[-1]:.2f}, Low: {df['pivot_low'].iloc[-1]:.2f}\n"
+            f"- Pivot High: {df['pivot_high'].iloc[-1] if not pd.isna(df['pivot_high'].iloc[-1]) else 'N/A'}, "
+            f"Low: {df['pivot_low'].iloc[-1] if not pd.isna(df['pivot_low'].iloc[-1]) else 'N/A'}\n"
             f"Extras:\n"
             f"- Moon Phase: {df['moon_phase'].iloc[-1]:.2f}\n\n"
             f"Trade Executed: {trade_msg}\n"
