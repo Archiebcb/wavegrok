@@ -1,52 +1,70 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
     <title>WaveGrok</title>
+</head>
+<body>
+    <h1>WaveGrok</h1>
+    <form id="fetchForm" method="POST" action="/fetch">
+        <input type="text" name="symbol" value="BTC/USD" required>
+        <input type="text" name="timeframe" value="4h" required>
+        <input type="number" name="limit" value="500" required>
+        <button type="submit">Fetch Data</button>
+    </form>
+    <button onclick="analyzeWaves()">Analyze Waves</button>
+    <button onclick="showChart()">Show Chart</button>
+    <div id="result"></div>
+    <div id="chartContainer">
+        <img id="chartImage" src="" alt="Chart" style="max-width: 100%; height: auto;">
+    </div>
+
     <script>
         async function fetchData() {
-            const symbol = document.getElementById('symbol').value;
-            const timeframe = document.getElementById('timeframe').value;
-            const limit = document.getElementById('limit').value;
             const response = await fetch('/fetch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ symbol, timeframe, limit })
+                body: JSON.stringify({
+                    symbol: document.querySelector('input[name="symbol"]').value,
+                    timeframe: document.querySelector('input[name="timeframe"]').value,
+                    limit: document.querySelector('input[name="limit"]').value
+                })
             });
-            const result = await response.json();
-            document.getElementById('output').innerText = result.message;
+            const data = await response.json();
+            document.getElementById('result').innerText = data.message;
         }
 
         async function analyzeWaves() {
-            const symbol = document.getElementById('symbol').value;
-            const primary_tf = document.getElementById('timeframe').value;
-            const secondary_tf = document.getElementById('secondary_tf').value;
             const response = await fetch('/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ symbol, primary_tf, secondary_tf })
+                body: JSON.stringify({
+                    symbol: document.querySelector('input[name="symbol"]').value,
+                    primary_tf: document.querySelector('input[name="timeframe"]').value,
+                    secondary_tf: document.querySelector('input[name="timeframe"]').value
+                })
             });
-            const result = await response.json();
-            document.getElementById('output').innerText = result.message;
+            const data = await response.json();
+            document.getElementById('result').innerText = data.message;
         }
 
-        function loadChart() {
-            const timeframe = document.getElementById('timeframe').value;
-            document.getElementById('chart').src = `/chart/${timeframe}`;
+        async function showChart() {
+            const timeframe = document.querySelector('input[name="timeframe"]').value;
+            const response = await fetch(`/chart/${timeframe}`);
+            if (response.ok) {
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                document.getElementById('chartImage').src = url;
+            } else {
+                const error = await response.json();
+                document.getElementById('result').innerText = error.error || 'Error loading chart';
+            }
         }
+
+        document.getElementById('fetchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await fetchData();
+        });
     </script>
-</head>
-<body>
-    <h1>WaveGrok Trading Assistant</h1>
-    <input id="symbol" placeholder="Enter symbol (e.g., BTC/USD)" />
-    <input id="timeframe" placeholder="Timeframe (e.g., 1h)" />
-    <input id="limit" placeholder="Limit (e.g., 500)" />
-    <button onclick="fetchData()">Fetch Data</button>
-    <br><br>
-    <input id="secondary_tf" placeholder="Secondary Timeframe (e.g., 4h)" />
-    <button onclick="analyzeWaves()">Analyze Waves</button>
-    <button onclick="loadChart()">Show Chart</button>
-    <br><br>
-    <img id="chart" src="" alt="Chart will appear here" style="max-width: 100%;" />
-    <pre id="output">Results will show here...</pre>
 </body>
 </html>

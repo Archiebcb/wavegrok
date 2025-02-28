@@ -264,16 +264,17 @@ class WaveGrok:
         ]
         apdict.extend(panels)
 
-        # Plot with panels
+        # Plot with panels and debug image buffer
         mpf.plot(candle_data, type='candle', style='charles', addplot=apdict, volume=True, figscale=1.5, figsize=(12, 24))
-
         logging.info(f"Number of addplot items: {len(apdict)}")
+        logging.info(f"Image buffer size: {img.tell()} bytes before seek")  # Debug image buffer
 
         # Adjust layout to prevent overlap
         plt.tight_layout()
 
         img = io.BytesIO()
         fig.savefig(img, format='png', bbox_inches='tight', dpi=100)
+        logging.info(f"Image buffer size after save: {img.tell()} bytes")  # Debug image buffer
         plt.close(fig)
         img.seek(0)
         return img
@@ -462,6 +463,7 @@ def get_chart(timeframe):
     img = agent.plot_chart(timeframe)
     if img is None:
         return jsonify({"error": "No data"}), 400
+    logging.info(f"Sending image with size: {img.tell()} bytes")  # Debug image size
     return send_file(img, mimetype='image/png')
 
 if __name__ == "__main__":
