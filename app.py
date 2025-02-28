@@ -123,12 +123,10 @@ class WaveGrok:
             df['pivot_low'] = df['low'].rolling(window=5, center=True).min()
             df['moon_phase'] = self._get_moon_phase(df.index[-1])
 
-            # Drop NaNs and sync peaks/troughs
+            # Drop NaNs to align all data
             df.dropna(inplace=True)
             self.data[timeframe] = df
             self.closes[timeframe] = df['close'].values
-            self.find_waves(timeframe)  # Run after dropna
-            
             return f"Fetched {limit} {timeframe} candles for {symbol}."
         except Exception as e:
             return f"Error fetching data from {self.exchange.name}: {str(e)}. Ensure symbol is like 'BTC/USD' and timeframe is valid (e.g., '1h', '4h')."
@@ -176,29 +174,33 @@ class WaveGrok:
     def find_waves(self, timeframe, min_distance=3):
         if timeframe not in self.data:
             return f"No data for {timeframe}—fetch some first!"
-        closes = self.data[timeframe]['close'].values  # Use cleaned df['close']
-        self.peaks[timeframe], _ = find_peaks(closes, distance=min_distance, prominence=closes.std()/10)
-        self.troughs[timeframe], _ = find_peaks(-closes, distance=min_distance, prominence=closes.std()/10)
-        return f"{timeframe}: Found {len(self.peaks[timeframe])} peaks and {len(self.troughs[timeframe])} troughs."
+        closes = self.data[timeframe]['close'].values
+        peaks, _ = find_peaks(closes, distance=min_distance, prominence=closes.std()/10)
+        troughs, _ = find_peaks(-closes, distance=min_distance, prominence=closes.std()/10)
+        self.peaks[timeframe] = peaks
+        self.troughs[timeframe] = troughs
+        return f"{timeframe}: Found {len(peaks)} peaks and {len(troughs)} troughs."
 
     def plot_chart(self, timeframe):
         if timeframe not in self.data:
             return None
         df = self.data[timeframe]
-        closes = self.closes[timeframe]
+
+        # Compute peaks and troughs directly from df['close'] to ensure sync
+        closes = df['close'].values
+        peaks, _ = find_peaks(closes, distance=3, prominence=closes.std()/10)
+        troughs, _ = find_peaks(-closes, distance=3, prominence=closes.std()/10)
 
         candle_data = df[['open', 'high', 'low', 'close', 'volume']].copy()
         candle_data.index = df.index
 
-        # Ensure peaks/troughs align with df after dropna
-        peak_indices = self.peaks[timeframe]
-        trough_indices = self.troughs[timeframe]
-        valid_peaks = peak_indices[peak_indices < len(df)]
-        valid_troughs = trough_indices[trough_indices < len(df)]
-        peak_times = df.index[valid_peaks]
-        trough_times = df.index[valid_troughs]
-        peak_values = df['close'].iloc[valid_peaks]
-        trough_values = df['close'].iloc[valid_troughs]
+        peak_times = df.index[peaks]
+        trough_times = df.index[troughs]
+        peak_values = df['close'].iloc[peaks]
+        trough_values = df['close'].iloc[troughs]
+
+        print(f"df.index: {len(df.index)}, peaks: {len(peak_times)}, peak_values: {len(peak_values)}, troughs: {len(trough_times)}, trough_values: {len(trough_values)}")
+        print(f"rsi: {len(df['rsi'])}, macd: {len(df['macd'])}, atr: {len(df['atr'])}")
 
         apdict = [
             mpf.make_addplot(pd.Series(peak_values, index=peak_times), type='scatter', markersize=100, marker='x', color='lime'),
@@ -222,8 +224,6 @@ class WaveGrok:
 
         ax1 = fig.axes[0]
         ax1.set_title(f"WaveGrok - {timeframe}")
-
-        print(f"df.index: {len(df.index)}, rsi: {len(df['rsi'])}, macd: {len(df['macd'])}, atr: {len(df['atr'])}")
 
         ax2 = fig.add_axes([0.125, 0.70, 0.775, 0.10])
         ax3 = fig.add_axes([0.125, 0.60, 0.775, 0.10])
