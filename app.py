@@ -248,54 +248,26 @@ class WaveGrok:
         # Increase figure size and adjust subplot heights
         fig = plt.figure(figsize=(12, 24))
         gs = fig.add_gridspec(nrows=9, height_ratios=[3, 1, 1, 1, 1, 1, 1, 1, 1])  # More space for candlestick
-        ax1 = fig.add_subplot(gs[0])
-        ax2 = fig.add_subplot(gs[1])
-        ax3 = fig.add_subplot(gs[2])
-        ax4 = fig.add_subplot(gs[3])
-        ax5 = fig.add_subplot(gs[4])
-        ax6 = fig.add_subplot(gs[5])
-        ax7 = fig.add_subplot(gs[6])
-        ax8 = fig.add_subplot(gs[7])
 
-        # Correct plot call without 'fig' kwarg
-        mpf.plot(candle_data, type='candle', style='charles', ax=ax1, addplot=apdict, volume=True)
+        # Define panels for mpf.plot
+        panels = [
+            mpf.make_addplot(df['rsi'], panel=1, color='purple', secondary_y=False),
+            mpf.make_addplot(df['macd'], panel=2, color='blue', secondary_y=False),
+            mpf.make_addplot(df['macd_signal'], panel=2, color='orange', secondary_y=False),
+            mpf.make_addplot(df['macd_histogram'], panel=2, type='bar', color='gray', alpha=0.5, secondary_y=False),
+            mpf.make_addplot(df['atr'], panel=3, color='orange', secondary_y=False),
+            mpf.make_addplot(df['stoch_k'], panel=4, color='blue', secondary_y=False),
+            mpf.make_addplot(df['stoch_d'], panel=4, color='red', linestyle='--', secondary_y=False),
+            mpf.make_addplot(df['cci'], panel=5, color='green', secondary_y=False),
+            mpf.make_addplot(df['obv'], panel=6, color='purple', secondary_y=False),
+            mpf.make_addplot(df['cmf'], panel=7, color='cyan', secondary_y=False)
+        ]
+        apdict.extend(panels)
+
+        # Plot with panels
+        mpf.plot(candle_data, type='candle', style='charles', addplot=apdict, volume=True, figscale=1.5, figsize=(12, 24))
+
         logging.info(f"Number of addplot items: {len(apdict)}")
-
-        ax1.set_title(f"WaveGrok - {timeframe}")
-
-        rsi_value = df['rsi'].iloc[-1]
-        ax2.plot(df.index, df['rsi'], label='RSI', color='purple')
-        ax2.axhline(70, ls='--', color='red')
-        ax2.axhline(30, ls='--', color='green')
-        ax2.set_title(f"RSI: {rsi_value:.2f}")
-        ax2.legend()
-
-        ax3.plot(df.index, df['macd'], label='MACD', color='blue')
-        ax3.plot(df.index, df['macd_signal'], label='Signal', color='orange')
-        ax3.bar(df.index, df['macd_histogram'], label='Histogram', color='gray', alpha=0.5)
-        ax3.legend()
-
-        atr_value = df['atr'].iloc[-1]
-        ax4.plot(df.index, df['atr'], label='ATR', color='orange')
-        ax4.set_title(f"ATR: {atr_value:.2f}")
-        ax4.legend()
-
-        ax5.plot(df.index, df['stoch_k'], label='%K', color='blue')
-        ax5.plot(df.index, df['stoch_d'], label='%D', color='red', linestyle='--')
-        ax5.set_title(f"Stoch %K: {df['stoch_k'].iloc[-1]:.2f}, %D: {df['stoch_d'].iloc[-1]:.2f}")
-        ax5.legend()
-
-        ax6.plot(df.index, df['cci'], label='CCI', color='green')
-        ax6.set_title(f"CCI: {df['cci'].iloc[-1]:.2f}")
-        ax6.legend()
-
-        ax7.plot(df.index, df['obv'], label='OBV', color='purple')
-        ax7.set_title(f"OBV Change: {df['obv'].diff().iloc[-1]:.2f}")
-        ax7.legend()
-
-        ax8.plot(df.index, df['cmf'], label='CMF', color='cyan')
-        ax8.set_title(f"CMF: {df['cmf'].iloc[-1]:.4f}")
-        ax8.legend()
 
         # Adjust layout to prevent overlap
         plt.tight_layout()
