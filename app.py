@@ -70,6 +70,7 @@ class WaveGrok:
             ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=kraken_interval, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+            df.set_index('timestamp', inplace=True)  # Set index early for consistency
 
             df['momentum'] = df['close'].pct_change()
             df['volume_change'] = df['volume'].pct_change()
@@ -118,7 +119,7 @@ class WaveGrok:
             df['fib_618'] = self._calculate_fibonacci(df, 0.618)
             df['pivot_high'] = df['high'].rolling(window=5, center=True).max()
             df['pivot_low'] = df['low'].rolling(window=5, center=True).min()
-            df['moon_phase'] = self._get_moon_phase(df['timestamp'].iloc[-1])
+            df['moon_phase'] = self._get_moon_phase(df.index[-1])
 
             self.data[timeframe] = df
             self.closes[timeframe] = df['close'].values
@@ -180,43 +181,50 @@ class WaveGrok:
         df = self.data[timeframe]
         closes = self.closes[timeframe]
 
-        # Candlestick plot first
-        candle_data = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].set_index('timestamp')
+        # Prepare candlestick data
+        candle_data = df[['open', 'high', 'low', 'close', 'volume']].copy()
+        candle_data.index = df.index  # Ensure timestamp index
+
+        # Convert peaks/troughs to match df index
+        peak_times = df.index[self.peaks[timeframe]]
+        trough_times = df.index[self.troughs[timeframe]]
+        peak_values = closes[self.peaks[timeframe]]
+        trough_values = closes[self.troughs[timeframe]]
+
+        # Candlestick plot
         fig, axes = mpf.plot(candle_data, type='candle', style='charles', returnfig=True,
-                             figsize=(12, 12), tight_layout=True, addplot=[
-                                 mpf.make_addplot(self.peaks[timeframe], type='scatter', markersize=100, marker='x', color='lime'),
-                                 mpf.make_addplot(self.troughs[timeframe], type='scatter', markersize=100, marker='o', color='magenta'),
+                             figsize=(12, 12), addplot=[
+                                 mpf.make_addplot(pd.Series(peak_values, index=peak_times), type='scatter', markersize=100, marker='x', color='lime'),
+                                 mpf.make_addplot(pd.Series(trough_values, index=trough_times), type='scatter', markersize=100, marker='o', color='magenta'),
                                  mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--'),
                                  mpf.make_addplot(df['sma_200'], color='red', linestyle='--')
                              ])
 
-        # Adjust figure size and add subplots below
-        fig.set_size_inches(12, 12)
+        # Adjust layout and add subplots
         ax1 = fig.axes[0]  # Candlestick axis
         ax1.set_title(f"WaveGrok - {timeframe}")
 
-        # Add subplots for RSI, MACD, ATR
         ax2 = fig.add_axes([0.125, 0.35, 0.775, 0.15])  # RSI
         ax3 = fig.add_axes([0.125, 0.20, 0.775, 0.15])  # MACD
         ax4 = fig.add_axes([0.125, 0.05, 0.775, 0.15])  # ATR
 
         # RSI
         rsi_value = df['rsi'].iloc[-1]
-        ax2.plot(df['rsi'], label='RSI', color='purple')
+        ax2.plot(df.index, df['rsi'], label='RSI', color='purple')
         ax2.axhline(70, ls='--', color='red', label='Overbought (70)')
         ax2.axhline(30, ls='--', color='green', label='Oversold (30)')
         ax2.set_title(f"RSI (14): {rsi_value:.2f}")
         ax2.legend()
 
         # MACD
-        ax3.plot(df['macd'], label='MACD', color='blue')
-        ax3.plot(df['macd_signal'], label='Signal', color='orange')
+        ax3.plot(df.index, df['macd'], label='MACD', color='blue')
+        ax3.plot(df.index, df['macd_signal'], label='Signal', color='orange')
         ax3.bar(df.index, df['macd_histogram'], label='Histogram', color='gray', alpha=0.5)
         ax3.legend()
 
         # ATR
         atr_value = df['atr'].iloc[-1]
-        ax4.plot(df['atr'], label='ATR', color='orange')
+        ax4.plot(df.index, df['atr'], label='ATR', color='orange')
         ax4.set_title(f"ATR (14): {atr_value:.2f}")
         ax4.legend()
 
