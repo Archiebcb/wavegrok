@@ -125,12 +125,16 @@ class WaveGrok:
             df['pivot_low'] = df['low'].rolling(window=5, center=True).min()
             df['moon_phase'] = self._get_moon_phase(df.index[-1])
 
-            df.dropna(inplace=True)
+            # Drop NaNs only where all columns are NaN to keep partial data
+            df.dropna(how='all', inplace=True)
+            if df.empty:
+                return f"No valid data for {symbol} on {timeframe} after cleaning."
+
             self.data[timeframe] = df
             self.closes[timeframe] = df['close'].values
             return f"Fetched {limit} {timeframe} candles for {symbol}."
         except Exception as e:
-            return f"Error fetching data from {self.exchange.name}: {str(e)}. Ensure symbol is like 'BTC/USD' and timeframe is valid (e.g., '1h', '4h')."
+            return f"Error fetching data from {self.exchange.name}: {str(e)}. Ensure symbol is like 'BTC/USD' and timeframe is valid."
 
     def _calculate_fractal(self, closes):
         return (closes.rolling(5).max() - closes.rolling(5).min()) / closes
@@ -186,8 +190,10 @@ class WaveGrok:
         if timeframe not in self.data:
             return None
         df = self.data[timeframe]
+        if df.empty:
+            logging.error(f"No data to plot for {timeframe}")
+            return None
 
-        # Compute peaks and troughs from cleaned data
         closes = df['close'].values
         peaks, _ = find_peaks(closes, distance=3, prominence=closes.std()/10)
         troughs, _ = find_peaks(-closes, distance=3, prominence=closes.std()/10)
@@ -195,7 +201,6 @@ class WaveGrok:
         candle_data = df[['open', 'high', 'low', 'close', 'volume']].copy()
         candle_data.index = df.index
 
-        # Validate and align peaks/troughs
         peak_times = df.index[peaks].to_list()
         peak_values = df['close'].iloc[peaks].to_list()
         trough_times = df.index[troughs].to_list()
@@ -203,30 +208,25 @@ class WaveGrok:
 
         logging.info(f"df.index: {len(df.index)}, peaks: {len(peak_times)}/{len(peak_values)}, troughs: {len(trough_times)}/{len(trough_values)}, rsi: {len(df['rsi'])}, macd: {len(df['macd'])}, atr: {len(df['atr'])}")
 
-        # Ensure lengths match before plotting
-        if len(peak_times) != len(peak_values) or len(trough_times) != len(trough_values):
-            logging.warning("Peaks or troughs mismatch—plotting without them")
-            apdict = []
-        else:
-            apdict = [
-                mpf.make_addplot(pd.Series(peak_values, index=peak_times), type='scatter', markersize=100, marker='x', color='lime'),
-                mpf.make_addplot(pd.Series(trough_values, index=trough_times), type='scatter', markersize=100, marker='o', color='magenta'),
-            ]
-        
-        # Add other indicators
+        apdict = []
+        if len(peak_times) == len(peak_values):
+            apdict.append(mpf.make_addplot(peak_values, type='scatter', x=peak_times, markersize=100, marker='x', color='lime'))
+        if len(trough_times) == len(trough_values):
+            apdict.append(mpf.make_addplot(trough_values, type='scatter', x=trough_times, markersize=100, marker='o', color='magenta'))
+
         apdict.extend([
-            mpf.make_addplot(df['sma_20'], color='cyan', linestyle='--'),
-            mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--'),
-            mpf.make_addplot(df['sma_200'], color='red', linestyle='--'),
-            mpf.make_addplot(df['ema_9'], color='green', linestyle='-.'),
-            mpf.make_addplot(df['psar'], color='purple', linestyle=':'),
-            mpf.make_addplot(df['bb_upper'], color='orange', linestyle='--'),
-            mpf.make_addplot(df['bb_lower'], color='orange', linestyle='--'),
-            mpf.make_addplot(df['donchian_upper'], color='blue', linestyle='--'),
-            mpf.make_addplot(df['donchian_lower'], color='blue', linestyle='--'),
-            mpf.make_addplot(df['fib_236'], color='pink', linestyle='-'),
-            mpf.make_addplot(df['fib_382'], color='pink', linestyle='-.'),
-            mpf.make_addplot(df['fib_618'], color='pink', linestyle='--')
+            mpf.make_addplot(df['sma_20'].to_list(), color='cyan', linestyle='--'),
+            mpf.make_addplot(df['sma_50'].to_list(), color='yellow', linestyle='--'),
+            mpf.make_addplot(df['sma_200'].to_list(), color='red', linestyle='--'),
+            mpf.make_addplot(df['ema_9'].to_list(), color='green', linestyle='-.'),
+            mpf.make_addplot(df['psar'].to_list(), color='purple', linestyle=':'),
+            mpf.make_addplot(df['bb_upper'].to_list(), color='orange', linestyle='--'),
+            mpf.make_addplot(df['bb_lower'].to_list(), color='orange', linestyle='--'),
+            mpf.make_addplot(df['donchian_upper'].to_list(), color='blue', linestyle='--'),
+            mpf.make_addplot(df['donchian_lower'].to_list(), color='blue', linestyle='--'),
+            mpf.make_addplot(df['fib_236'].to_list(), color='pink', linestyle='-'),
+            mpf.make_addplot(df['fib_382'].to_list(), color='pink', linestyle='-.'),
+            mpf.make_addplot(df['fib_618'].to_list(), color='pink', linestyle='--')
         ])
 
         fig, axes = mpf.plot(candle_data, type='candle', style='charles', returnfig=True,
