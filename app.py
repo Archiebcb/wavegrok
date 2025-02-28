@@ -123,6 +123,9 @@ class WaveGrok:
             df['pivot_low'] = df['low'].rolling(window=5, center=True).min()
             df['moon_phase'] = self._get_moon_phase(df.index[-1])
 
+            # Drop NaNs to ensure all data aligns
+            df.dropna(inplace=True)
+
             self.data[timeframe] = df
             self.closes[timeframe] = df['close'].values
             return f"Fetched {limit} {timeframe} candles for {symbol}."
@@ -191,7 +194,6 @@ class WaveGrok:
         peak_values = closes[self.peaks[timeframe]]
         trough_values = closes[self.troughs[timeframe]]
 
-        # Candlestick with tons of overlays
         apdict = [
             mpf.make_addplot(pd.Series(peak_values, index=peak_times), type='scatter', markersize=100, marker='x', color='lime'),
             mpf.make_addplot(pd.Series(trough_values, index=trough_times), type='scatter', markersize=100, marker='o', color='magenta'),
@@ -215,7 +217,9 @@ class WaveGrok:
         ax1 = fig.axes[0]  # Candlestick axis
         ax1.set_title(f"WaveGrok - {timeframe}")
 
-        # Subplots (adjust positions for more room)
+        # Debug lengths
+        print(f"df.index: {len(df.index)}, rsi: {len(df['rsi'])}, macd: {len(df['macd'])}, atr: {len(df['atr'])}")
+
         ax2 = fig.add_axes([0.125, 0.70, 0.775, 0.10])  # RSI
         ax3 = fig.add_axes([0.125, 0.60, 0.775, 0.10])  # MACD
         ax4 = fig.add_axes([0.125, 0.50, 0.775, 0.10])  # ATR
@@ -224,7 +228,6 @@ class WaveGrok:
         ax7 = fig.add_axes([0.125, 0.20, 0.775, 0.10])  # OBV
         ax8 = fig.add_axes([0.125, 0.10, 0.775, 0.10])  # CMF
 
-        # RSI
         rsi_value = df['rsi'].iloc[-1]
         ax2.plot(df.index, df['rsi'], label='RSI', color='purple')
         ax2.axhline(70, ls='--', color='red')
@@ -232,35 +235,29 @@ class WaveGrok:
         ax2.set_title(f"RSI: {rsi_value:.2f}")
         ax2.legend()
 
-        # MACD
         ax3.plot(df.index, df['macd'], label='MACD', color='blue')
         ax3.plot(df.index, df['macd_signal'], label='Signal', color='orange')
         ax3.bar(df.index, df['macd_histogram'], label='Histogram', color='gray', alpha=0.5)
         ax3.legend()
 
-        # ATR
         atr_value = df['atr'].iloc[-1]
         ax4.plot(df.index, df['atr'], label='ATR', color='orange')
         ax4.set_title(f"ATR: {atr_value:.2f}")
         ax4.legend()
 
-        # Stochastic
         ax5.plot(df.index, df['stoch_k'], label='%K', color='blue')
         ax5.plot(df.index, df['stoch_d'], label='%D', color='red', linestyle='--')
         ax5.set_title(f"Stoch %K: {df['stoch_k'].iloc[-1]:.2f}, %D: {df['stoch_d'].iloc[-1]:.2f}")
         ax5.legend()
 
-        # CCI
         ax6.plot(df.index, df['cci'], label='CCI', color='green')
         ax6.set_title(f"CCI: {df['cci'].iloc[-1]:.2f}")
         ax6.legend()
 
-        # OBV
         ax7.plot(df.index, df['obv'], label='OBV', color='purple')
         ax7.set_title(f"OBV Change: {df['obv'].diff().iloc[-1]:.2f}")
         ax7.legend()
 
-        # CMF
         ax8.plot(df.index, df['cmf'], label='CMF', color='cyan')
         ax8.set_title(f"CMF: {df['cmf'].iloc[-1]:.4f}")
         ax8.legend()
