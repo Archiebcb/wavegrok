@@ -123,11 +123,12 @@ class WaveGrok:
             df['pivot_low'] = df['low'].rolling(window=5, center=True).min()
             df['moon_phase'] = self._get_moon_phase(df.index[-1])
 
-            # Drop NaNs to ensure all data aligns
+            # Drop NaNs and sync peaks/troughs
             df.dropna(inplace=True)
-
             self.data[timeframe] = df
             self.closes[timeframe] = df['close'].values
+            self.find_waves(timeframe)  # Run after dropna
+            
             return f"Fetched {limit} {timeframe} candles for {symbol}."
         except Exception as e:
             return f"Error fetching data from {self.exchange.name}: {str(e)}. Ensure symbol is like 'BTC/USD' and timeframe is valid (e.g., '1h', '4h')."
@@ -173,9 +174,9 @@ class WaveGrok:
         return recent_low + (recent_high - recent_low) * level
 
     def find_waves(self, timeframe, min_distance=3):
-        if timeframe not in self.closes:
+        if timeframe not in self.data:
             return f"No data for {timeframe}—fetch some first!"
-        closes = self.closes[timeframe]
+        closes = self.data[timeframe]['close'].values  # Use cleaned df['close']
         self.peaks[timeframe], _ = find_peaks(closes, distance=min_distance, prominence=closes.std()/10)
         self.troughs[timeframe], _ = find_peaks(-closes, distance=min_distance, prominence=closes.std()/10)
         return f"{timeframe}: Found {len(self.peaks[timeframe])} peaks and {len(self.troughs[timeframe])} troughs."
@@ -189,10 +190,15 @@ class WaveGrok:
         candle_data = df[['open', 'high', 'low', 'close', 'volume']].copy()
         candle_data.index = df.index
 
-        peak_times = df.index[self.peaks[timeframe]]
-        trough_times = df.index[self.troughs[timeframe]]
-        peak_values = closes[self.peaks[timeframe]]
-        trough_values = closes[self.troughs[timeframe]]
+        # Ensure peaks/troughs align with df after dropna
+        peak_indices = self.peaks[timeframe]
+        trough_indices = self.troughs[timeframe]
+        valid_peaks = peak_indices[peak_indices < len(df)]
+        valid_troughs = trough_indices[trough_indices < len(df)]
+        peak_times = df.index[valid_peaks]
+        trough_times = df.index[valid_troughs]
+        peak_values = df['close'].iloc[valid_peaks]
+        trough_values = df['close'].iloc[valid_troughs]
 
         apdict = [
             mpf.make_addplot(pd.Series(peak_values, index=peak_times), type='scatter', markersize=100, marker='x', color='lime'),
@@ -214,19 +220,18 @@ class WaveGrok:
         fig, axes = mpf.plot(candle_data, type='candle', style='charles', returnfig=True,
                              figsize=(12, 18), addplot=apdict, volume=True)
 
-        ax1 = fig.axes[0]  # Candlestick axis
+        ax1 = fig.axes[0]
         ax1.set_title(f"WaveGrok - {timeframe}")
 
-        # Debug lengths
         print(f"df.index: {len(df.index)}, rsi: {len(df['rsi'])}, macd: {len(df['macd'])}, atr: {len(df['atr'])}")
 
-        ax2 = fig.add_axes([0.125, 0.70, 0.775, 0.10])  # RSI
-        ax3 = fig.add_axes([0.125, 0.60, 0.775, 0.10])  # MACD
-        ax4 = fig.add_axes([0.125, 0.50, 0.775, 0.10])  # ATR
-        ax5 = fig.add_axes([0.125, 0.40, 0.775, 0.10])  # Stochastic
-        ax6 = fig.add_axes([0.125, 0.30, 0.775, 0.10])  # CCI
-        ax7 = fig.add_axes([0.125, 0.20, 0.775, 0.10])  # OBV
-        ax8 = fig.add_axes([0.125, 0.10, 0.775, 0.10])  # CMF
+        ax2 = fig.add_axes([0.125, 0.70, 0.775, 0.10])
+        ax3 = fig.add_axes([0.125, 0.60, 0.775, 0.10])
+        ax4 = fig.add_axes([0.125, 0.50, 0.775, 0.10])
+        ax5 = fig.add_axes([0.125, 0.40, 0.775, 0.10])
+        ax6 = fig.add_axes([0.125, 0.30, 0.775, 0.10])
+        ax7 = fig.add_axes([0.125, 0.20, 0.775, 0.10])
+        ax8 = fig.add_axes([0.125, 0.10, 0.775, 0.10])
 
         rsi_value = df['rsi'].iloc[-1]
         ax2.plot(df.index, df['rsi'], label='RSI', color='purple')
