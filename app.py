@@ -65,18 +65,14 @@ class WaveGrok:
         if symbol not in self.markets:
             return f"Invalid ticker '{symbol}' for {self.exchange.name}. Try 'XRP/USD' instead."
         try:
-            # Convert timeframe to Kraken’s format (e.g., '1h' -> 60, '4h' -> 240)
             timeframe_map = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440}
-            kraken_interval = timeframe_map.get(timeframe.lower(), 60)  # Default to 1h if invalid
+            kraken_interval = timeframe_map.get(timeframe.lower(), 60)
             ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=kraken_interval, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
 
-            # Core Price Metrics
             df['momentum'] = df['close'].pct_change()
             df['volume_change'] = df['volume'].pct_change()
-
-            # Trend Indicators
             df['sma_20'] = SMAIndicator(df['close'], window=20).sma_indicator()
             df['sma_50'] = SMAIndicator(df['close'], window=50).sma_indicator()
             df['sma_200'] = SMAIndicator(df['close'], window=200).sma_indicator()
@@ -93,8 +89,6 @@ class WaveGrok:
             df['ichimoku_a'] = ichimoku.ichimoku_a()
             df['ichimoku_b'] = ichimoku.ichimoku_b()
             df['ichimoku_cloud'] = df['ichimoku_a'] - df['ichimoku_b']
-
-            # Momentum Indicators
             df['rsi'] = RSIIndicator(df['close'], window=14).rsi()
             stoch = StochasticOscillator(df['high'], df['low'], df['close'])
             df['stoch_k'] = stoch.stoch()
@@ -102,8 +96,6 @@ class WaveGrok:
             df['cci'] = CCIIndicator(df['high'], df['low'], df['close']).cci()
             df['roc'] = df['close'].pct_change(periods=12) * 100
             df['williams_r'] = WilliamsRIndicator(df['high'], df['low'], df['close']).williams_r()
-
-            # Volatility Indicators
             bb = BollingerBands(df['close'])
             df['bb_upper'] = bb.bollinger_hband()
             df['bb_lower'] = bb.bollinger_lband()
@@ -113,8 +105,6 @@ class WaveGrok:
             dc = DonchianChannel(df['high'], df['low'], df['close'])
             df['donchian_upper'] = dc.donchian_channel_hband()
             df['donchian_lower'] = dc.donchian_channel_lband()
-
-            # Volume Indicators
             df['obv'] = OnBalanceVolumeIndicator(df['close'], df['volume']).on_balance_volume()
             df['vwap'] = VolumeWeightedAveragePrice(df['high'], df['low'], df['close'], df['volume']).volume_weighted_average_price()
             df['vwap_diff'] = (df['close'] - df['vwap']) / df['vwap']
@@ -122,16 +112,12 @@ class WaveGrok:
             df['force'] = ForceIndexIndicator(df['close'], df['volume']).force_index()
             df['adl'] = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low']) * df['volume']
             df['adl'] = df['adl'].cumsum().fillna(0)
-
-            # Support/Resistance and Waves
             df['fractal'] = self._calculate_fractal(df['close'])
             df['fib_236'] = self._calculate_fibonacci(df, 0.236)
             df['fib_382'] = self._calculate_fibonacci(df, 0.382)
             df['fib_618'] = self._calculate_fibonacci(df, 0.618)
             df['pivot_high'] = df['high'].rolling(window=5, center=True).max()
             df['pivot_low'] = df['low'].rolling(window=5, center=True).min()
-
-            # Extras
             df['moon_phase'] = self._get_moon_phase(df['timestamp'].iloc[-1])
 
             self.data[timeframe] = df
@@ -193,22 +179,26 @@ class WaveGrok:
             return None
         df = self.data[timeframe]
         closes = self.closes[timeframe]
-        fig = plt.figure(figsize=(12, 12))
-        
-        # Subplots: Candlestick, RSI, MACD, ATR
-        ax1 = plt.subplot2grid((12, 1), (0, 0), rowspan=6)  # Candlestick
-        ax2 = plt.subplot2grid((12, 1), (6, 0), rowspan=2)  # RSI
-        ax3 = plt.subplot2grid((12, 1), (8, 0), rowspan=2)  # MACD
-        ax4 = plt.subplot2grid((12, 1), (10, 0), rowspan=2) # ATR
 
-        # Candlestick Chart
+        # Candlestick plot first
         candle_data = df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].set_index('timestamp')
-        mpf.plot(candle_data, type='candle', ax=ax1, style='charles', title=f"WaveGrok - {timeframe}")
-        ax1.plot(self.peaks[timeframe], closes[self.peaks[timeframe]], "x", label='Peaks', color='lime')
-        ax1.plot(self.troughs[timeframe], closes[self.troughs[timeframe]], "o", label='Troughs', color='magenta')
-        ax1.plot(df['sma_50'], label='SMA 50', color='yellow', linestyle='--')
-        ax1.plot(df['sma_200'], label='SMA 200', color='red', linestyle='--')
-        ax1.legend()
+        fig, axes = mpf.plot(candle_data, type='candle', style='charles', returnfig=True,
+                             figsize=(12, 12), tight_layout=True, addplot=[
+                                 mpf.make_addplot(self.peaks[timeframe], type='scatter', markersize=100, marker='x', color='lime'),
+                                 mpf.make_addplot(self.troughs[timeframe], type='scatter', markersize=100, marker='o', color='magenta'),
+                                 mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--'),
+                                 mpf.make_addplot(df['sma_200'], color='red', linestyle='--')
+                             ])
+
+        # Adjust figure size and add subplots below
+        fig.set_size_inches(12, 12)
+        ax1 = fig.axes[0]  # Candlestick axis
+        ax1.set_title(f"WaveGrok - {timeframe}")
+
+        # Add subplots for RSI, MACD, ATR
+        ax2 = fig.add_axes([0.125, 0.35, 0.775, 0.15])  # RSI
+        ax3 = fig.add_axes([0.125, 0.20, 0.775, 0.15])  # MACD
+        ax4 = fig.add_axes([0.125, 0.05, 0.775, 0.15])  # ATR
 
         # RSI
         rsi_value = df['rsi'].iloc[-1]
@@ -230,10 +220,9 @@ class WaveGrok:
         ax4.set_title(f"ATR (14): {atr_value:.2f}")
         ax4.legend()
 
-        plt.tight_layout()
         img = io.BytesIO()
-        plt.savefig(img, format='png', bbox_inches='tight')
-        plt.close()
+        fig.savefig(img, format='png', bbox_inches='tight')
+        plt.close(fig)
         img.seek(0)
         return img
 
@@ -301,7 +290,6 @@ class WaveGrok:
         if len(peaks) < 2 or len(troughs) < 2:
             return f"Not enough peaks or troughs in {primary_tf}."
 
-        # Feature vector for ML models
         features = [
             df['momentum'].iloc[-1] or 0, df['rsi'].iloc[-1] or 0, df['macd'].iloc[-1] or 0,
             df['bb_width'].iloc[-1] or 0, df['atr'].iloc[-1] or 0, df['adx'].iloc[-1] or 0,
@@ -311,7 +299,6 @@ class WaveGrok:
             df['cmf'].iloc[-1] or 0, df['force'].iloc[-1] or 0
         ]
 
-        # Elliott Wave Prediction
         rf_pred = self.rf_model.predict([features])[0]
         lstm_input = np.array(df[['momentum', 'rsi', 'macd', 'bb_width', 'atr', 'adx', 'stoch_k', 'cci',
                                   'ichimoku_cloud', 'vwap_diff', 'close', 'volume_change']].iloc[-10:].fillna(0)).reshape(1, 10, 12)
@@ -319,7 +306,6 @@ class WaveGrok:
         wave_labels = ["Wave 1", "Wave 2", "Wave 3", "Wave 4", "Wave 5", "Wave A", "Wave B", "Wave C"]
         current_wave = wave_labels[lstm_pred] if random.random() > 0.3 else rf_pred
 
-        # Direction and Targets
         direction = "Up" if current_wave in ["Wave 1", "Wave 3", "Wave 5"] else "Down" if current_wave in ["Wave A", "Wave C"] else "Sideways"
         fib_targets = {
             "Buy": df['fib_382'].iloc[-1] if direction == "Up" else df['fib_618'].iloc[-1],
@@ -327,7 +313,6 @@ class WaveGrok:
             "Stop": df['ema_50'].iloc[-1] if direction == "Up" else df['ema_50'].iloc[-1] * 1.02
         }
 
-        # Confluence Signals
         signals = {
             "Trend": "Bullish" if df['ema_9'].iloc[-1] > df['ema_21'].iloc[-1] and df['adx'].iloc[-1] > 25 else "Bearish" if df['ema_9'].iloc[-1] < df['ema_21'].iloc[-1] else "Neutral",
             "Momentum": "Overbought" if df['rsi'].iloc[-1] > 70 or df['stoch_k'].iloc[-1] > 80 else "Oversold" if df['rsi'].iloc[-1] < 30 else "Neutral",
@@ -335,11 +320,9 @@ class WaveGrok:
             "Volume": "Accumulation" if df['obv'].diff().iloc[-1] > 0 else "Distribution"
         }
 
-        # SMA Crossover Signal
         sma_cross = "Bullish Crossover" if df['sma_50'].iloc[-1] > df['sma_200'].iloc[-1] and df['sma_50'].iloc[-2] <= df['sma_200'].iloc[-2] else \
                     "Bearish Crossover" if df['sma_50'].iloc[-1] < df['sma_200'].iloc[-1] and df['sma_50'].iloc[-2] >= df['sma_200'].iloc[-2] else "No Crossover"
 
-        # Q-Learning Decision
         state = (current_wave, direction, df['rsi'].iloc[-1] > 70, df['macd'].iloc[-1] > df['macd_signal'].iloc[-1],
                  "Above" if closes[-1] > df['bb_upper'].iloc[-1] else "Below" if closes[-1] < df['bb_lower'].iloc[-1] else "Within",
                  *self.get_meme_hype(symbol), df['adx'].iloc[-1] > 25)
@@ -350,7 +333,6 @@ class WaveGrok:
         self.update_q_table(state, action, reward, state)
         self.epsilon = max(0.1, self.epsilon * 0.995)
 
-        # Mega Report with Adjusted Indicators
         rsi_value = df['rsi'].iloc[-1]
         rsi_signal = "Overbought (Sell)" if rsi_value > 70 else "Oversold (Buy)" if rsi_value < 30 else "Neutral"
         atr_value = df['atr'].iloc[-1]
