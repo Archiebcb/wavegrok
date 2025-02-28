@@ -200,34 +200,50 @@ class WaveGrok:
         candle_data = df[['open', 'high', 'low', 'close', 'volume']].copy()
         candle_data.index = df.index
 
-        # Pad peaks and troughs to match df length
+        # Pad peaks and troughs
         peak_data = np.full(len(df), np.nan)
         trough_data = np.full(len(df), np.nan)
         peak_data[peaks] = df['close'].iloc[peaks]
         trough_data[troughs] = df['close'].iloc[troughs]
 
-        logging.info(f"df.index: {len(df.index)}, peaks: {len(peaks)}/{len(peak_data)} (valid: {np.sum(~np.isnan(peak_data))}), troughs: {len(troughs)}/{len(trough_data)} (valid: {np.sum(~np.isnan(trough_data))}), rsi: {len(df['rsi'])}, macd: {len(df['macd'])}, atr: {len(df['atr'])}")
+        # Log all addplot data validity
+        logging.info(f"df.index: {len(df.index)}, peaks: {len(peaks)}/{len(peak_data)} (valid: {np.sum(~np.isnan(peak_data))}), troughs: {len(troughs)}/{len(trough_data)} (valid: {np.sum(~np.isnan(trough_data))})")
+        logging.info(f"sma_20: {len(df['sma_20'])} (valid: {np.sum(~np.isnan(df['sma_20']))}), sma_50: {len(df['sma_50'])} (valid: {np.sum(~np.isnan(df['sma_50']))}), sma_200: {len(df['sma_200'])} (valid: {np.sum(~np.isnan(df['sma_200']))})")
+        logging.info(f"ema_9: {len(df['ema_9'])} (valid: {np.sum(~np.isnan(df['ema_9']))}), psar: {len(df['psar'])} (valid: {np.sum(~np.isnan(df['psar']))})")
+        logging.info(f"bb_upper: {len(df['bb_upper'])} (valid: {np.sum(~np.isnan(df['bb_upper']))}), bb_lower: {len(df['bb_lower'])} (valid: {np.sum(~np.isnan(df['bb_lower']))})")
+        logging.info(f"donchian_upper: {len(df['donchian_upper'])} (valid: {np.sum(~np.isnan(df['donchian_upper']))}), donchian_lower: {len(df['donchian_lower'])} (valid: {np.sum(~np.isnan(df['donchian_lower']))})")
+        logging.info(f"fib_236: {len(df['fib_236'])} (valid: {np.sum(~np.isnan(df['fib_236']))}), fib_382: {len(df['fib_382'])} (valid: {np.sum(~np.isnan(df['fib_382']))}), fib_618: {len(df['fib_618'])} (valid: {np.sum(~np.isnan(df['fib_618']))})")
+        logging.info(f"rsi: {len(df['rsi'])}, macd: {len(df['macd'])}, atr: {len(df['atr'])}")
 
         apdict = []
-        if np.sum(~np.isnan(peak_data)) > 0:  # Only add if there are valid peak points
+        if np.sum(~np.isnan(peak_data)) > 0:
             apdict.append(mpf.make_addplot(peak_data, type='scatter', markersize=100, marker='x', color='lime'))
-        if np.sum(~np.isnan(trough_data)) > 0:  # Only add if there are valid trough points
+        if np.sum(~np.isnan(trough_data)) > 0:
             apdict.append(mpf.make_addplot(trough_data, type='scatter', markersize=100, marker='o', color='magenta'))
-
-        apdict.extend([
-            mpf.make_addplot(df['sma_20'], color='cyan', linestyle='--'),
-            mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--'),
-            mpf.make_addplot(df['sma_200'], color='red', linestyle='--'),
-            mpf.make_addplot(df['ema_9'], color='green', linestyle='-.'),
-            mpf.make_addplot(df['psar'], color='purple', linestyle=':'),
-            mpf.make_addplot(df['bb_upper'], color='orange', linestyle='--'),
-            mpf.make_addplot(df['bb_lower'], color='orange', linestyle='--'),
-            mpf.make_addplot(df['donchian_upper'], color='blue', linestyle='--'),
-            mpf.make_addplot(df['donchian_lower'], color='blue', linestyle='--'),
-            mpf.make_addplot(df['fib_236'], color='pink', linestyle='-'),
-            mpf.make_addplot(df['fib_382'], color='pink', linestyle='-.'),
-            mpf.make_addplot(df['fib_618'], color='pink', linestyle='--')
-        ])
+        if np.sum(~np.isnan(df['sma_20'])) > 0:
+            apdict.append(mpf.make_addplot(df['sma_20'], color='cyan', linestyle='--'))
+        if np.sum(~np.isnan(df['sma_50'])) > 0:
+            apdict.append(mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--'))
+        if np.sum(~np.isnan(df['sma_200'])) > 0:
+            apdict.append(mpf.make_addplot(df['sma_200'], color='red', linestyle='--'))
+        if np.sum(~np.isnan(df['ema_9'])) > 0:
+            apdict.append(mpf.make_addplot(df['ema_9'], color='green', linestyle='-.'))
+        if np.sum(~np.isnan(df['psar'])) > 0:
+            apdict.append(mpf.make_addplot(df['psar'], color='purple', linestyle=':'))
+        if np.sum(~np.isnan(df['bb_upper'])) > 0:
+            apdict.append(mpf.make_addplot(df['bb_upper'], color='orange', linestyle='--'))
+        if np.sum(~np.isnan(df['bb_lower'])) > 0:
+            apdict.append(mpf.make_addplot(df['bb_lower'], color='orange', linestyle='--'))
+        if np.sum(~np.isnan(df['donchian_upper'])) > 0:
+            apdict.append(mpf.make_addplot(df['donchian_upper'], color='blue', linestyle='--'))
+        if np.sum(~np.isnan(df['donchian_lower'])) > 0:
+            apdict.append(mpf.make_addplot(df['donchian_lower'], color='blue', linestyle='--'))
+        if np.sum(~np.isnan(df['fib_236'])) > 0:
+            apdict.append(mpf.make_addplot(df['fib_236'], color='pink', linestyle='-'))
+        if np.sum(~np.isnan(df['fib_382'])) > 0:
+            apdict.append(mpf.make_addplot(df['fib_382'], color='pink', linestyle='-.'))
+        if np.sum(~np.isnan(df['fib_618'])) > 0:
+            apdict.append(mpf.make_addplot(df['fib_618'], color='pink', linestyle='--'))
 
         fig, axes = mpf.plot(candle_data, type='candle', style='charles', returnfig=True,
                              figsize=(12, 18), addplot=apdict, volume=True)
