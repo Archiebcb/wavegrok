@@ -245,19 +245,21 @@ class WaveGrok:
         if np.sum(~np.isnan(df['fib_618'])) > 0:
             apdict.append(mpf.make_addplot(df['fib_618'], color='pink', linestyle='--'))
 
-        fig, axes = mpf.plot(candle_data, type='candle', style='charles', returnfig=True,
-                             figsize=(12, 18), addplot=apdict, volume=True)
+        # Increase figure size and adjust subplot heights
+        fig = plt.figure(figsize=(12, 24))
+        gs = fig.add_gridspec(nrows=9, height_ratios=[3, 1, 1, 1, 1, 1, 1, 1, 1])  # More space for candlestick
+        ax1 = fig.add_subplot(gs[0])
+        ax2 = fig.add_subplot(gs[1])
+        ax3 = fig.add_subplot(gs[2])
+        ax4 = fig.add_subplot(gs[3])
+        ax5 = fig.add_subplot(gs[4])
+        ax6 = fig.add_subplot(gs[5])
+        ax7 = fig.add_subplot(gs[6])
+        ax8 = fig.add_subplot(gs[7])
 
-        ax1 = fig.axes[0]
+        mpf.plot(candle_data, type='candle', style='charles', ax=ax1, addplot=apdict, volume=True, fig=fig)
+
         ax1.set_title(f"WaveGrok - {timeframe}")
-
-        ax2 = fig.add_axes([0.125, 0.70, 0.775, 0.10])
-        ax3 = fig.add_axes([0.125, 0.60, 0.775, 0.10])
-        ax4 = fig.add_axes([0.125, 0.50, 0.775, 0.10])
-        ax5 = fig.add_axes([0.125, 0.40, 0.775, 0.10])
-        ax6 = fig.add_axes([0.125, 0.30, 0.775, 0.10])
-        ax7 = fig.add_axes([0.125, 0.20, 0.775, 0.10])
-        ax8 = fig.add_axes([0.125, 0.10, 0.775, 0.10])
 
         rsi_value = df['rsi'].iloc[-1]
         ax2.plot(df.index, df['rsi'], label='RSI', color='purple')
@@ -293,8 +295,11 @@ class WaveGrok:
         ax8.set_title(f"CMF: {df['cmf'].iloc[-1]:.4f}")
         ax8.legend()
 
+        # Adjust layout to prevent overlap
+        plt.tight_layout()
+
         img = io.BytesIO()
-        fig.savefig(img, format='png', bbox_inches='tight')
+        fig.savefig(img, format='png', bbox_inches='tight', dpi=100)
         plt.close(fig)
         img.seek(0)
         return img
