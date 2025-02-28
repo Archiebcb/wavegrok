@@ -5,14 +5,14 @@ from scipy.signal import find_peaks
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import mplfinance as mpf  # For candlestick charts
+import mplfinance as mpf
 import io
 import random
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import LSTM, Dense
-from ta.momentum import RSIIndicator, StochasticOscillator, WilliamsRIndicator, AwesomeOscillator, UltimateOscillator
+from ta.momentum import RSIIndicator, StochasticOscillator, WilliamsRIndicator
 from ta.trend import MACD, ADXIndicator, CCIIndicator, IchimokuIndicator, SMAIndicator, EMAIndicator
 from ta.volatility import BollingerBands, AverageTrueRange, DonchianChannel
 from ta.volume import VolumeWeightedAveragePrice, OnBalanceVolumeIndicator, ChaikinMoneyFlowIndicator, ForceIndexIndicator
@@ -99,8 +99,6 @@ class WaveGrok:
             df['cci'] = CCIIndicator(df['high'], df['low'], df['close']).cci()
             df['roc'] = df['close'].pct_change(periods=12) * 100
             df['williams_r'] = WilliamsRIndicator(df['high'], df['low'], df['close']).williams_r()
-            df['awesome'] = AwesomeOscillator(df['high'], df['low']).awesome_oscillator()
-            df['ultimate'] = UltimateOscillator(df['high'], df['low'], df['close']).ultimate_oscillator()
 
             # Volatility Indicators
             bb = BollingerBands(df['close'])
@@ -194,7 +192,7 @@ class WaveGrok:
         closes = self.closes[timeframe]
         fig = plt.figure(figsize=(12, 12))
         
-        # Define subplots: Candlestick, RSI, MACD, ATR
+        # Subplots: Candlestick, RSI, MACD, ATR
         ax1 = plt.subplot2grid((12, 1), (0, 0), rowspan=6)  # Candlestick
         ax2 = plt.subplot2grid((12, 1), (6, 0), rowspan=2)  # RSI
         ax3 = plt.subplot2grid((12, 1), (8, 0), rowspan=2)  # MACD
@@ -300,15 +298,14 @@ class WaveGrok:
         if len(peaks) < 2 or len(troughs) < 2:
             return f"Not enough peaks or troughs in {primary_tf}."
 
-        # Feature vector for ML models (expanded with more indicators)
+        # Feature vector for ML models
         features = [
             df['momentum'].iloc[-1] or 0, df['rsi'].iloc[-1] or 0, df['macd'].iloc[-1] or 0,
             df['bb_width'].iloc[-1] or 0, df['atr'].iloc[-1] or 0, df['adx'].iloc[-1] or 0,
             df['stoch_k'].iloc[-1] or 0, df['cci'].iloc[-1] or 0, df['ichimoku_cloud'].iloc[-1] or 0,
             df['vwap_diff'].iloc[-1] or 0, df['volume_change'].iloc[-1] or 0, df['std_dev'].iloc[-1] or 0,
             df['obv'].diff().iloc[-1] or 0, df['adl'].diff().iloc[-1] or 0, df['williams_r'].iloc[-1] or 0,
-            df['awesome'].iloc[-1] or 0, df['ultimate'].iloc[-1] or 0, df['cmf'].iloc[-1] or 0,
-            df['force'].iloc[-1] or 0
+            df['cmf'].iloc[-1] or 0, df['force'].iloc[-1] or 0
         ]
 
         # Elliott Wave Prediction
@@ -350,7 +347,7 @@ class WaveGrok:
         self.update_q_table(state, action, reward, state)
         self.epsilon = max(0.1, self.epsilon * 0.995)
 
-        # Mega Report with All Indicators
+        # Mega Report with Adjusted Indicators
         rsi_value = df['rsi'].iloc[-1]
         rsi_signal = "Overbought (Sell)" if rsi_value > 70 else "Oversold (Buy)" if rsi_value < 30 else "Neutral"
         atr_value = df['atr'].iloc[-1]
@@ -375,8 +372,6 @@ class WaveGrok:
             f"- Stochastic %K: {df['stoch_k'].iloc[-1]:.2f} (D: {df['stoch_d'].iloc[-1]:.2f})\n"
             f"- CCI: {df['cci'].iloc[-1]:.2f}\n"
             f"- Williams %R: {df['williams_r'].iloc[-1]:.2f}\n"
-            f"- Awesome Oscillator: {df['awesome'].iloc[-1]:.2f}\n"
-            f"- Ultimate Oscillator: {df['ultimate'].iloc[-1]:.2f}\n"
             f"Volatility Indicators:\n"
             f"- ATR: {atr_value:.2f}\n"
             f"- Bollinger Width: {df['bb_width'].iloc[-1]:.4f}\n"
