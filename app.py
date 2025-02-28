@@ -44,10 +44,13 @@ class WaveGrok:
         self.gamma = 0.9
 
     def _init_rf_model(self):
-        X = np.array([[0.02, 0.5, 0.1, 60, 0.5, 0.9, 0.5, 25, 70, 100, 0.5, 0.1],
-                      [0.01, -0.4, 0.05, 40, -0.3, 0.8, 0.3, 15, 30, -50, -0.2, -0.05],
-                      [0.03, 0.6, 0.2, 70, 0.8, 1.1, 0.7, 35, 80, 150, 0.8, 0.15],
-                      [-0.02, -0.3, 0.1, 30, -0.5, 0.7, 0.4, 20, 20, -80, -0.3, -0.08]])
+        # Match the 17 features used in analyze_waves
+        X = np.array([
+            [0.02, 0.5, 0.1, 0.05, 0.5, 25, 70, 50, 0.1, 0.01, 0.2, 100, 50, -20, 0.3, 0.4, 10],  # Sample 1
+            [0.01, -0.4, -0.1, 0.03, 0.3, 15, 30, 40, -0.2, -0.02, 0.1, -50, 20, -10, -0.2, 0.2, -5],  # Sample 2
+            [0.03, 0.6, 0.2, 0.07, 0.8, 35, 80, 60, 0.3, 0.02, 0.3, 150, 70, 30, 0.4, 0.5, 15],  # Sample 3
+            [-0.02, -0.3, -0.05, 0.04, 0.4, 20, 20, 30, -0.1, -0.01, 0.15, -80, 40, -15, -0.3, 0.3, -8]  # Sample 4
+        ])
         y = ["Wave 1", "Wave 2", "Wave 3", "Wave A"]
         model = RandomForestClassifier(n_estimators=200, random_state=42)
         model.fit(X, y)
@@ -70,7 +73,7 @@ class WaveGrok:
             ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=kraken_interval, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df.set_index('timestamp', inplace=True)  # Set index early for consistency
+            df.set_index('timestamp', inplace=True)
 
             df['momentum'] = df['close'].pct_change()
             df['volume_change'] = df['volume'].pct_change()
@@ -181,17 +184,14 @@ class WaveGrok:
         df = self.data[timeframe]
         closes = self.closes[timeframe]
 
-        # Prepare candlestick data
         candle_data = df[['open', 'high', 'low', 'close', 'volume']].copy()
-        candle_data.index = df.index  # Ensure timestamp index
+        candle_data.index = df.index
 
-        # Convert peaks/troughs to match df index
         peak_times = df.index[self.peaks[timeframe]]
         trough_times = df.index[self.troughs[timeframe]]
         peak_values = closes[self.peaks[timeframe]]
         trough_values = closes[self.troughs[timeframe]]
 
-        # Candlestick plot
         fig, axes = mpf.plot(candle_data, type='candle', style='charles', returnfig=True,
                              figsize=(12, 12), addplot=[
                                  mpf.make_addplot(pd.Series(peak_values, index=peak_times), type='scatter', markersize=100, marker='x', color='lime'),
@@ -200,15 +200,13 @@ class WaveGrok:
                                  mpf.make_addplot(df['sma_200'], color='red', linestyle='--')
                              ])
 
-        # Adjust layout and add subplots
-        ax1 = fig.axes[0]  # Candlestick axis
+        ax1 = fig.axes[0]
         ax1.set_title(f"WaveGrok - {timeframe}")
 
-        ax2 = fig.add_axes([0.125, 0.35, 0.775, 0.15])  # RSI
-        ax3 = fig.add_axes([0.125, 0.20, 0.775, 0.15])  # MACD
-        ax4 = fig.add_axes([0.125, 0.05, 0.775, 0.15])  # ATR
+        ax2 = fig.add_axes([0.125, 0.35, 0.775, 0.15])
+        ax3 = fig.add_axes([0.125, 0.20, 0.775, 0.15])
+        ax4 = fig.add_axes([0.125, 0.05, 0.775, 0.15])
 
-        # RSI
         rsi_value = df['rsi'].iloc[-1]
         ax2.plot(df.index, df['rsi'], label='RSI', color='purple')
         ax2.axhline(70, ls='--', color='red', label='Overbought (70)')
@@ -216,13 +214,11 @@ class WaveGrok:
         ax2.set_title(f"RSI (14): {rsi_value:.2f}")
         ax2.legend()
 
-        # MACD
         ax3.plot(df.index, df['macd'], label='MACD', color='blue')
         ax3.plot(df.index, df['macd_signal'], label='Signal', color='orange')
         ax3.bar(df.index, df['macd_histogram'], label='Histogram', color='gray', alpha=0.5)
         ax3.legend()
 
-        # ATR
         atr_value = df['atr'].iloc[-1]
         ax4.plot(df.index, df['atr'], label='ATR', color='orange')
         ax4.set_title(f"ATR (14): {atr_value:.2f}")
