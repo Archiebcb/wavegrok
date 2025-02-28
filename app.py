@@ -67,29 +67,63 @@ class WaveGrok:
             ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+
+            # Core Price Metrics
             df['momentum'] = df['close'].pct_change()
             df['volume_change'] = df['volume'].pct_change()
-            df['rsi'] = RSIIndicator(df['close'], window=14).rsi()
+
+            # Trend Indicators
+            df['sma_50'] = df['close'].rolling(window=50).mean()
+            df['sma_200'] = df['close'].rolling(window=200).mean()
+            df['ema_9'] = df['close'].ewm(span=9, adjust=False).mean()
+            df['ema_21'] = df['close'].ewm(span=21, adjust=False).mean()
+            df['ema_50'] = df['close'].ewm(span=50, adjust=False).mean()
             macd = MACD(df['close'])
             df['macd'] = macd.macd()
             df['macd_signal'] = macd.macd_signal()
+            df['macd_histogram'] = macd.macd_diff()
+            df['adx'] = ADXIndicator(df['high'], df['low'], df['close']).adx()
+            df['psar'] = self._calculate_psar(df['high'], df['low'])
+            ichimoku = IchimokuIndicator(df['high'], df['low'])
+            df['ichimoku_a'] = ichimoku.ichimoku_a()
+            df['ichimoku_b'] = ichimoku.ichimoku_b()
+            df['ichimoku_cloud'] = df['ichimoku_a'] - df['ichimoku_b']
+
+            # Momentum Indicators
+            df['rsi'] = RSIIndicator(df['close'], window=14).rsi()
+            stoch = StochasticOscillator(df['high'], df['low'], df['close'])
+            df['stoch_k'] = stoch.stoch()
+            df['stoch_d'] = stoch.stoch_signal()
+            df['cci'] = CCIIndicator(df['high'], df['low'], df['close']).cci()
+            df['roc'] = df['close'].pct_change(periods=12) * 100
+
+            # Volatility Indicators
             bb = BollingerBands(df['close'])
             df['bb_upper'] = bb.bollinger_hband()
             df['bb_lower'] = bb.bollinger_lband()
             df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['close']
             df['atr'] = AverageTrueRange(df['high'], df['low'], df['close']).average_true_range()
-            df['adx'] = ADXIndicator(df['high'], df['low'], df['close']).adx()
-            stoch = StochasticOscillator(df['high'], df['low'], df['close'])
-            df['stoch_k'] = stoch.stoch()
-            df['cci'] = CCIIndicator(df['high'], df['low'], df['close']).cci()
-            ichimoku = IchimokuIndicator(df['high'], df['low'])
-            df['ichimoku_a'] = ichimoku.ichimoku_a()
-            df['ichimoku_b'] = ichimoku.ichimoku_b()
-            df['ichimoku_cloud'] = df['ichimoku_a'] - df['ichimoku_b']
+            df['std_dev'] = df['close'].rolling(window=20).std()
+
+            # Volume Indicators
+            df['obv'] = (np.sign(df['close'].diff()) * df['volume']).cumsum()
             df['vwap'] = VolumeWeightedAveragePrice(df['high'], df['low'], df['close'], df['volume']).volume_weighted_average_price()
             df['vwap_diff'] = (df['close'] - df['vwap']) / df['vwap']
+            df['adl'] = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low']) * df['volume']
+            df['adl'] = df['adl'].cumsum().fillna(0)
+
+            # Support/Resistance and Waves
             df['fractal'] = self._calculate_fractal(df['close'])
+            df['fib_382'] = self._calculate_fibonacci(df, 0.382)
+            df['fib_618'] = self._calculate_fibonacci(df, 0.618)
+            df['pivot_high'] = df['high'].rolling(window=5, center=True).max()
+            df['pivot_low'] = df['low'].rolling(window=5, center=True).min()
+            df['donchian_upper'] = df['high'].rolling(window=20).max()
+            df['donchian_lower'] = df['low'].rolling(window=20).min()
+
+            # Extras
             df['moon_phase'] = self._get_moon_phase(df['timestamp'].iloc[-1])
+
             self.data[timeframe] = df
             self.closes[timeframe] = df['close'].values
             return f"Fetched {limit} {timeframe} candles for {symbol}."
@@ -103,6 +137,39 @@ class WaveGrok:
         day = (dt - pd.Timestamp("2025-01-01")).days % 29.53
         return np.abs(np.sin(day / 29.53 * 2 * np.pi))
 
+    def _calculate_psar(self, highs, lows, af_start=0.02, af_max=0.2):
+        psar = highs.copy()
+        af = af_start
+        ep = lows[0]
+        trend = 1
+        for i in range(1, len(highs)):
+            if trend == 1:
+                psar[i] = psar[i-1] + af * (ep - psar[i-1])
+                if lows[i] < psar[i]:
+                    trend = -1
+                    psar[i] = ep
+                    ep = highs[i]
+                    af = af_start
+                elif highs[i] > ep:
+                    ep = highs[i]
+                    af = min(af_max, af + af_start)
+            else:
+                psar[i] = psar[i-1] + af * (ep - psar[i-1])
+                if highs[i] > psar[i]:
+                    trend = 1
+                    psar[i] = ep
+                    ep = lows[i]
+                    af = af_start
+                elif lows[i] < ep:
+                    ep = lows[i]
+                    af = min(af_max, af + af_start)
+        return psar
+
+    def _calculate_fibonacci(self, df, level):
+        recent_high = df['high'].iloc[-20:].max()
+        recent_low = df['low'].iloc[-20:].min()
+        return recent_low + (recent_high - recent_low) * level
+
     def find_waves(self, timeframe, min_distance=3):
         if timeframe not in self.closes:
             return f"No data for {timeframe}—fetch some first!"
@@ -112,19 +179,40 @@ class WaveGrok:
         return f"{timeframe}: Found {len(self.peaks[timeframe])} peaks and {len(self.troughs[timeframe])} troughs."
 
     def plot_chart(self, timeframe):
+        if timeframe not in self.data:
+            return None
         df = self.data[timeframe]
         closes = self.closes[timeframe]
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 10), height_ratios=[3, 1, 1])
+        
+        # Price Chart with Waves and Indicators
         ax1.plot(closes, label='Price', color='cyan')
         ax1.plot(self.peaks[timeframe], closes[self.peaks[timeframe]], "x", label='Peaks', color='lime')
         ax1.plot(self.troughs[timeframe], closes[self.troughs[timeframe]], "o", label='Troughs', color='magenta')
+        ax1.plot(df['ema_9'], label='EMA 9', color='yellow', linestyle='--')
+        ax1.plot(df['bb_upper'], label='BB Upper', color='red', linestyle='--')
+        ax1.plot(df['bb_lower'], label='BB Lower', color='green', linestyle='--')
         ax1.legend()
         ax1.set_title(f"WaveGrok - {timeframe}")
+
+        # RSI
         ax2.plot(df['rsi'], label='RSI', color='purple')
         ax2.axhline(70, ls='--', color='red')
         ax2.axhline(30, ls='--', color='green')
         ax2.legend()
+
+        # MACD
+        ax3.plot(df['macd'], label='MACD', color='blue')
+        ax3.plot(df['macd_signal'], label='Signal', color='orange')
+        ax3.bar(df.index, df['macd_histogram'], label='Histogram', color='gray', alpha=0.5)
+        ax3.legend()
+
         plt.tight_layout()
+        img = io.BytesIO()
+        plt.savefig(img, format='png', bbox_inches='tight')
+        plt.close()
+        img.seek(0)
+        return img
 
     def get_meme_hype(self, symbol):
         return random.uniform(0, 1), random.randint(0, 1000)
@@ -181,6 +269,8 @@ class WaveGrok:
                 f"Profit: ${total_profit:.2f}, Cash: ${self.portfolio['cash']:.2f}")
 
     def analyze_waves(self, symbol, primary_tf, secondary_tf):
+        if primary_tf not in self.data:
+            return f"No data for {primary_tf}—fetch some first!"
         df = self.data[primary_tf]
         closes = self.closes[primary_tf]
         peaks = self.peaks[primary_tf]
@@ -188,26 +278,43 @@ class WaveGrok:
         if len(peaks) < 2 or len(troughs) < 2:
             return f"Not enough peaks or troughs in {primary_tf}."
 
-        features_rf = [df['momentum'].iloc[-1] or 0,
-                       (closes[peaks[-1]] - closes[troughs[-1]]) / (closes[peaks[-1]] - closes[troughs[-2]]) if len(troughs) > 1 else 0,
-                       df['volume_change'].iloc[-1] or 0, df['rsi'].iloc[-1] or 0, df['macd'].iloc[-1] or 0,
-                       df['bb_width'].iloc[-1] or 0, df['atr'].iloc[-1] or 0, df['adx'].iloc[-1] or 0,
-                       df['stoch_k'].iloc[-1] or 0, df['cci'].iloc[-1] or 0, df['ichimoku_cloud'].iloc[-1] or 0,
-                       df['vwap_diff'].iloc[-1] or 0]
-        rf_pred = self.rf_model.predict([features_rf])[0]
-        lstm_input = np.array(df[['momentum', 'rsi', 'macd', 'bb_width', 'atr', 'adx', 'stoch_k', 'cci', 'ichimoku_cloud', 'vwap_diff', 'close', 'volume_change']].iloc[-10:].fillna(0)).reshape(1, 10, 12)
-        lstm_pred = np.argmax(self.lstm_model.predict(lstm_input, verbose=0))
-        lstm_pred = ["Wave 1", "Wave 2", "Wave 3", "Wave 4", "Wave 5", "Wave A", "Wave B", "Wave C"][lstm_pred]
-        current_wave = rf_pred if random.random() > 0.3 else lstm_pred
-        direction = "Up" if current_wave in ["Wave 1", "Wave 3", "Wave 5"] else "Down" if current_wave in ["Wave A", "Wave C"] else "Unclear"
+        # Feature vector for ML models
+        features = [
+            df['momentum'].iloc[-1] or 0, df['rsi'].iloc[-1] or 0, df['macd'].iloc[-1] or 0,
+            df['bb_width'].iloc[-1] or 0, df['atr'].iloc[-1] or 0, df['adx'].iloc[-1] or 0,
+            df['stoch_k'].iloc[-1] or 0, df['cci'].iloc[-1] or 0, df['ichimoku_cloud'].iloc[-1] or 0,
+            df['vwap_diff'].iloc[-1] or 0, df['volume_change'].iloc[-1] or 0, df['std_dev'].iloc[-1] or 0,
+            df['obv'].diff().iloc[-1] or 0, df['adl'].diff().iloc[-1] or 0
+        ]
 
-        state = (current_wave, direction, df['rsi'].iloc[-1] > 70 if df['rsi'].iloc[-1] else False,
-                 df['macd'].iloc[-1] > df['macd_signal'].iloc[-1] if df['macd'].iloc[-1] else False,
+        # Elliott Wave Prediction
+        rf_pred = self.rf_model.predict([features])[0]
+        lstm_input = np.array(df[['momentum', 'rsi', 'macd', 'bb_width', 'atr', 'adx', 'stoch_k', 'cci', 
+                                  'ichimoku_cloud', 'vwap_diff', 'close', 'volume_change']].iloc[-10:].fillna(0)).reshape(1, 10, 12)
+        lstm_pred = np.argmax(self.lstm_model.predict(lstm_input, verbose=0))
+        wave_labels = ["Wave 1", "Wave 2", "Wave 3", "Wave 4", "Wave 5", "Wave A", "Wave B", "Wave C"]
+        current_wave = wave_labels[lstm_pred] if random.random() > 0.3 else rf_pred
+
+        # Direction and Targets
+        direction = "Up" if current_wave in ["Wave 1", "Wave 3", "Wave 5"] else "Down" if current_wave in ["Wave A", "Wave C"] else "Sideways"
+        fib_targets = {
+            "Buy": df['fib_382'].iloc[-1] if direction == "Up" else df['fib_618'].iloc[-1],
+            "Sell": df['fib_618'].iloc[-1] if direction == "Up" else df['fib_382'].iloc[-1],
+            "Stop": df['ema_50'].iloc[-1] if direction == "Up" else df['ema_50'].iloc[-1] * 1.02
+        }
+
+        # Confluence Signals
+        signals = {
+            "Trend": "Bullish" if df['ema_9'].iloc[-1] > df['ema_21'].iloc[-1] and df['adx'].iloc[-1] > 25 else "Bearish" if df['ema_9'].iloc[-1] < df['ema_21'].iloc[-1] else "Neutral",
+            "Momentum": "Overbought" if df['rsi'].iloc[-1] > 70 or df['stoch_k'].iloc[-1] > 80 else "Oversold" if df['rsi'].iloc[-1] < 30 else "Neutral",
+            "Volatility": "Breakout" if df['bb_width'].iloc[-1] < df['bb_width'].mean() * 0.5 else "Range",
+            "Volume": "Accumulation" if df['obv'].diff().iloc[-1] > 0 else "Distribution"
+        }
+
+        # Q-Learning Decision
+        state = (current_wave, direction, df['rsi'].iloc[-1] > 70, df['macd'].iloc[-1] > df['macd_signal'].iloc[-1],
                  "Above" if closes[-1] > df['bb_upper'].iloc[-1] else "Below" if closes[-1] < df['bb_lower'].iloc[-1] else "Within",
-                 *self.get_meme_hype(symbol), df['moon_phase'].iloc[-1] > 0.9 if df['moon_phase'].iloc[-1] else False,
-                 df['adx'].iloc[-1] > 25 if df['adx'].iloc[-1] else False, df['stoch_k'].iloc[-1] > 80 if df['stoch_k'].iloc[-1] else False,
-                 df['cci'].iloc[-1] > 100 if df['cci'].iloc[-1] else False, df['ichimoku_cloud'].iloc[-1] > 0 if df['ichimoku_cloud'].iloc[-1] else False,
-                 df['vwap_diff'].iloc[-1] > 0 if df['vwap_diff'].iloc[-1] else False)
+                 *self.get_meme_hype(symbol), df['adx'].iloc[-1] > 25)
         action = self.get_q_action(state)
         mtf_confirmed = secondary_tf in self.peaks and len(self.peaks[secondary_tf]) >= 2
         confidence = 0.9 if mtf_confirmed else 0.7
@@ -215,9 +322,25 @@ class WaveGrok:
         self.update_q_table(state, action, reward, state)
         self.epsilon = max(0.1, self.epsilon * 0.995)
 
-        return (f"Wave: {current_wave}, Direction: {direction}\n"
-                f"Action: {action}\nTrade: {trade_msg}\n"
-                f"Portfolio: {self.report_performance()}")
+        # Comprehensive Report
+        report = (
+            f"WaveGrok Analysis for {symbol} ({primary_tf})\n"
+            f"Current Wave: {current_wave}\n"
+            f"Direction: {direction}\n"
+            f"Recommended Action: {action}\n"
+            f"Buy Point: ${fib_targets['Buy']:.2f}\n"
+            f"Sell Target: ${fib_targets['Sell']:.2f}\n"
+            f"Stop Loss: ${fib_targets['Stop']:.2f}\n"
+            f"Confidence: {confidence:.2%}\n\n"
+            f"Technical Signals:\n"
+            f"- Trend: {signals['Trend']}\n"
+            f"- Momentum: {signals['Momentum']} (RSI: {df['rsi'].iloc[-1]:.2f}, Stoch: {df['stoch_k'].iloc[-1]:.2f})\n"
+            f"- Volatility: {signals['Volatility']} (ATR: {df['atr'].iloc[-1]:.2f})\n"
+            f"- Volume: {signals['Volume']} (OBV Change: {df['obv'].diff().iloc[-1]:.2f})\n\n"
+            f"Trade Executed: {trade_msg}\n"
+            f"Portfolio Status: {self.report_performance()}"
+        )
+        return report
 
 agent = WaveGrok()
 
@@ -247,13 +370,9 @@ def analyze():
 
 @app.route('/chart/<timeframe>')
 def get_chart(timeframe):
-    if timeframe not in agent.data:
+    img = agent.plot_chart(timeframe)
+    if img is None:
         return jsonify({"error": "No data"}), 400
-    agent.plot_chart(timeframe)
-    img = io.BytesIO()
-    plt.savefig(img, format='png', bbox_inches='tight')
-    plt.close()
-    img.seek(0)
     return send_file(img, mimetype='image/png')
 
 if __name__ == "__main__":
