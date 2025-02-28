@@ -206,11 +206,15 @@ class WaveGrok:
         peak_data[peaks] = df['close'].iloc[peaks]
         trough_data[troughs] = df['close'].iloc[troughs]
 
-        logging.info(f"df.index: {len(df.index)}, peaks: {len(peaks)}/{len(peak_data)}, troughs: {len(troughs)}/{len(trough_data)}, rsi: {len(df['rsi'])}, macd: {len(df['macd'])}, atr: {len(df['atr'])}")
+        logging.info(f"df.index: {len(df.index)}, peaks: {len(peaks)}/{len(peak_data)} (valid: {np.sum(~np.isnan(peak_data))}), troughs: {len(troughs)}/{len(trough_data)} (valid: {np.sum(~np.isnan(trough_data))}), rsi: {len(df['rsi'])}, macd: {len(df['macd'])}, atr: {len(df['atr'])}")
 
-        apdict = [
-            mpf.make_addplot(peak_data, type='scatter', markersize=100, marker='x', color='lime'),
-            mpf.make_addplot(trough_data, type='scatter', markersize=100, marker='o', color='magenta'),
+        apdict = []
+        if np.sum(~np.isnan(peak_data)) > 0:  # Only add if there are valid peak points
+            apdict.append(mpf.make_addplot(peak_data, type='scatter', markersize=100, marker='x', color='lime'))
+        if np.sum(~np.isnan(trough_data)) > 0:  # Only add if there are valid trough points
+            apdict.append(mpf.make_addplot(trough_data, type='scatter', markersize=100, marker='o', color='magenta'))
+
+        apdict.extend([
             mpf.make_addplot(df['sma_20'], color='cyan', linestyle='--'),
             mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--'),
             mpf.make_addplot(df['sma_200'], color='red', linestyle='--'),
@@ -223,7 +227,7 @@ class WaveGrok:
             mpf.make_addplot(df['fib_236'], color='pink', linestyle='-'),
             mpf.make_addplot(df['fib_382'], color='pink', linestyle='-.'),
             mpf.make_addplot(df['fib_618'], color='pink', linestyle='--')
-        ]
+        ])
 
         fig, axes = mpf.plot(candle_data, type='candle', style='charles', returnfig=True,
                              figsize=(12, 18), addplot=apdict, volume=True)
