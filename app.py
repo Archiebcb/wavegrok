@@ -63,9 +63,12 @@ class WaveGrok:
 
     def fetch_data(self, symbol, timeframe, limit):
         if symbol not in self.markets:
-            return f"Invalid ticker '{symbol}' for {self.exchange.name}."
+            return f"Invalid ticker '{symbol}' for {self.exchange.name}. Try 'XRP/USD' instead."
         try:
-            ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe, limit)
+            # Convert timeframe to Kraken’s format (e.g., '1h' -> 60, '4h' -> 240)
+            timeframe_map = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440}
+            kraken_interval = timeframe_map.get(timeframe.lower(), 60)  # Default to 1h if invalid
+            ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=kraken_interval, limit=limit)
             df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
 
@@ -135,7 +138,7 @@ class WaveGrok:
             self.closes[timeframe] = df['close'].values
             return f"Fetched {limit} {timeframe} candles for {symbol}."
         except Exception as e:
-            return f"Error fetching data: {str(e)}"
+            return f"Error fetching data from {self.exchange.name}: {str(e)}. Ensure symbol is like 'XRP/USD' and timeframe is valid (e.g., '1h', '4h')."
 
     def _calculate_fractal(self, closes):
         return (closes.rolling(5).max() - closes.rolling(5).min()) / closes
