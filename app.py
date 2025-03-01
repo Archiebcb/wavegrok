@@ -3,7 +3,7 @@ import ccxt
 import pandas as pd
 from scipy.signal import find_peaks
 import matplotlib
-matplotlib.use('Agg')
+matplotlib.use('Agg')  # Non-interactive backend for server
 import matplotlib.pyplot as plt
 import mplfinance as mpf
 import io
@@ -187,6 +187,7 @@ class WaveGrok:
 
     def plot_chart(self, timeframe):
         if timeframe not in self.data:
+            logging.error(f"No data for {timeframe}—fetch some first!")
             return None
         df = self.data[timeframe]
         if df.empty:
@@ -198,7 +199,7 @@ class WaveGrok:
         troughs, _ = find_peaks(-closes, distance=3, prominence=closes.std()/10)
 
         candle_data = df[['open', 'high', 'low', 'close', 'volume']].copy()
-        candle_data.index = df.index
+        candle_data.columns = ['Open', 'High', 'Low', 'Close', 'Volume']  # Standardize column names for mplfinance
 
         # Pad peaks and troughs
         peak_data = np.full(len(df), np.nan)
@@ -206,7 +207,7 @@ class WaveGrok:
         peak_data[peaks] = df['close'].iloc[peaks]
         trough_data[troughs] = df['close'].iloc[troughs]
 
-        # Log all addplot data validity
+        # Log data validity
         logging.info(f"df.index: {len(df.index)}, peaks: {len(peaks)}/{len(peak_data)} (valid: {np.sum(~np.isnan(peak_data))}), troughs: {len(troughs)}/{len(trough_data)} (valid: {np.sum(~np.isnan(trough_data))})")
         logging.info(f"sma_20: {len(df['sma_20'])} (valid: {np.sum(~np.isnan(df['sma_20']))}), sma_50: {len(df['sma_50'])} (valid: {np.sum(~np.isnan(df['sma_50']))}), sma_200: {len(df['sma_200'])} (valid: {np.sum(~np.isnan(df['sma_200']))})")
         logging.info(f"ema_9: {len(df['ema_9'])} (valid: {np.sum(~np.isnan(df['ema_9']))}), psar: {len(df['psar'])} (valid: {np.sum(~np.isnan(df['psar']))})")
@@ -215,6 +216,7 @@ class WaveGrok:
         logging.info(f"fib_236: {len(df['fib_236'])} (valid: {np.sum(~np.isnan(df['fib_236']))}), fib_382: {len(df['fib_382'])} (valid: {np.sum(~np.isnan(df['fib_382']))}), fib_618: {len(df['fib_618'])} (valid: {np.sum(~np.isnan(df['fib_618']))})")
         logging.info(f"rsi: {len(df['rsi'])}, macd: {len(df['macd'])}, atr: {len(df['atr'])}")
 
+        # Define additional plots
         apdict = []
         if np.sum(~np.isnan(peak_data)) > 0:
             apdict.append(mpf.make_addplot(peak_data, type='scatter', markersize=100, marker='x', color='lime'))
@@ -245,39 +247,40 @@ class WaveGrok:
         if np.sum(~np.isnan(df['fib_618'])) > 0:
             apdict.append(mpf.make_addplot(df['fib_618'], color='pink', linestyle='--'))
 
-        # Increase figure size and adjust subplot heights
-        fig = plt.figure(figsize=(12, 24))
-        gs = fig.add_gridspec(nrows=9, height_ratios=[3, 1, 1, 1, 1, 1, 1, 1, 1])  # More space for candlestick
-
-        # Define panels for mpf.plot
+        # Panels for indicators
         panels = [
-            mpf.make_addplot(df['rsi'], panel=1, color='purple', secondary_y=False),
-            mpf.make_addplot(df['macd'], panel=2, color='blue', secondary_y=False),
-            mpf.make_addplot(df['macd_signal'], panel=2, color='orange', secondary_y=False),
-            mpf.make_addplot(df['macd_histogram'], panel=2, type='bar', color='gray', alpha=0.5, secondary_y=False),
-            mpf.make_addplot(df['atr'], panel=3, color='orange', secondary_y=False),
-            mpf.make_addplot(df['stoch_k'], panel=4, color='blue', secondary_y=False),
-            mpf.make_addplot(df['stoch_d'], panel=4, color='red', linestyle='--', secondary_y=False),
-            mpf.make_addplot(df['cci'], panel=5, color='green', secondary_y=False),
-            mpf.make_addplot(df['obv'], panel=6, color='purple', secondary_y=False),
-            mpf.make_addplot(df['cmf'], panel=7, color='cyan', secondary_y=False)
+            mpf.make_addplot(df['rsi'], panel=1, color='purple', ylabel='RSI'),
+            mpf.make_addplot(df['macd'], panel=2, color='blue', ylabel='MACD'),
+            mpf.make_addplot(df['macd_signal'], panel=2, color='orange'),
+            mpf.make_addplot(df['macd_histogram'], panel=2, type='bar', color='gray', alpha=0.5),
+            mpf.make_addplot(df['atr'], panel=3, color='orange', ylabel='ATR'),
+            mpf.make_addplot(df['stoch_k'], panel=4, color='blue', ylabel='Stoch'),
+            mpf.make_addplot(df['stoch_d'], panel=4, color='red', linestyle='--'),
+            mpf.make_addplot(df['cci'], panel=5, color='green', ylabel='CCI'),
+            mpf.make_addplot(df['obv'], panel=6, color='purple', ylabel='OBV'),
+            mpf.make_addplot(df['cmf'], panel=7, color='cyan', ylabel='CMF')
         ]
         apdict.extend(panels)
 
-        # Plot with panels
-        mpf.plot(candle_data, type='candle', style='charles', addplot=apdict, volume=True, figscale=1.5, figsize=(12, 24))
+        # Create buffer and plot directly to it
+        buf = io.BytesIO()
+        mpf.plot(
+            candle_data,
+            type='candle',
+            style='charles',
+            title=f'{timeframe} Chart',
+            ylabel='Price',
+            volume=True,
+            addplot=apdict,
+            figscale=1.5,
+            figsize=(12, 24),
+            savefig=dict(fname=buf, format='png', bbox_inches='tight', dpi=100)
+        )
         logging.info(f"Number of addplot items: {len(apdict)}")
-
-        # Adjust layout to prevent overlap
-        plt.tight_layout()
-
-        img = io.BytesIO()
-        fig.savefig(img, format='png', bbox_inches='tight', dpi=100)
-        logging.info(f"Image buffer size after save: {img.tell()} bytes")  # Debug image buffer
-        plt.close(fig)
-        img.seek(0)
-        logging.info(f"Sending image with size: {img.tell()} bytes after seek")  # Debug image size after seek
-        return img
+        logging.info(f"Image buffer size after save: {buf.tell()} bytes")
+        buf.seek(0)
+        logging.info(f"Returning image with size: {buf.tell()} bytes after seek")
+        return buf
 
     def get_meme_hype(self, symbol):
         return random.uniform(0, 1), random.randint(0, 1000)
@@ -463,7 +466,7 @@ def get_chart(timeframe):
     img = agent.plot_chart(timeframe)
     if img is None:
         return jsonify({"error": "No data"}), 400
-    logging.info(f"Sending image with size: {img.tell()} bytes after seek")  # Debug image size after seek
+    logging.info(f"Sending image with size: {img.tell()} bytes from route")
     return send_file(img, mimetype='image/png')
 
 if __name__ == "__main__":
