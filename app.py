@@ -264,10 +264,9 @@ class WaveGrok:
         ]
         apdict.extend(panels)
 
-        # Plot with panels and debug image buffer
+        # Plot with panels
         mpf.plot(candle_data, type='candle', style='charles', addplot=apdict, volume=True, figscale=1.5, figsize=(12, 24))
         logging.info(f"Number of addplot items: {len(apdict)}")
-        logging.info(f"Image buffer size: {img.tell()} bytes before seek")  # Debug image buffer
 
         # Adjust layout to prevent overlap
         plt.tight_layout()
@@ -277,6 +276,7 @@ class WaveGrok:
         logging.info(f"Image buffer size after save: {img.tell()} bytes")  # Debug image buffer
         plt.close(fig)
         img.seek(0)
+        logging.info(f"Sending image with size: {img.tell()} bytes")  # Debug image size
         return img
 
     def get_meme_hype(self, symbol):
@@ -296,7 +296,7 @@ class WaveGrok:
         if state_str not in self.q_table:
             self.q_table[state_str] = {"Buy": 0, "Sell": 0, "Hold": 0}
         if next_state_str not in self.q_table:
-            self.q_table[next_state_str] = {"Buy": 0, "Sell": 0, "Hold": 0}
+            self.q_table[next_state_str] = {"Buy": 0, "Sell": 0, "Hold": 0"}
         old_value = self.q_table[state_str][action]
         next_max = max(self.q_table[next_state_str].values())
         new_value = old_value + self.alpha * (reward + self.gamma * next_max - old_value)
