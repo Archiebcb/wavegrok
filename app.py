@@ -26,7 +26,7 @@ import time
 import traceback
 
 warnings.filterwarnings("ignore")
-logging.basicConfig(level=logging.DEBUG)  # Crank up logging
+logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 
@@ -479,42 +479,54 @@ def home():
 def fetch_data():
     try:
         data = request.get_json()
+        logging.debug(f"Received fetch request: {data}")
         if not data:
             logging.error("No JSON data received in /fetch")
             return jsonify({"error": "No data provided"}), 400
         symbol = data.get('symbol')
         timeframe = data.get('timeframe')
-        limit = int(data.get('limit'))
+        limit = data.get('limit')
+        if not all([symbol, timeframe, limit]):
+            logging.error(f"Missing required fields: symbol={symbol}, timeframe={timeframe}, limit={limit}")
+            return jsonify({"error": "Missing required fields"}), 400
+        limit = int(limit)
         result = agent.fetch_data(symbol, timeframe, limit)
         if "Fetched" in result or "Loaded" in result:
             agent.find_waves(timeframe)
-        logging.debug(f"Fetch result: {result}")
-        return jsonify({"message": result})
+        response = jsonify({"message": result})
+        logging.debug(f"Fetch response: {result}")
+        return response
     except Exception as e:
         logging.error(f"Error in /fetch: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
     try:
         data = request.get_json()
+        logging.debug(f"Received analyze request: {data}")
         if not data:
             logging.error("No JSON data received in /analyze")
             return jsonify({"error": "No data provided"}), 400
         symbol = data.get('symbol')
         primary_tf = data.get('primary_tf')
         secondary_tf = data.get('secondary_tf')
+        if not all([symbol, primary_tf, secondary_tf]):
+            logging.error(f"Missing required fields: symbol={symbol}, primary_tf={primary_tf}, secondary_tf={secondary_tf}")
+            return jsonify({"error": "Missing required fields"}), 400
         result = agent.analyze_waves(symbol, primary_tf, secondary_tf)
-        logging.debug(f"Analyze result: {result}")
-        return jsonify({"message": result})
+        response = jsonify({"message": result})
+        logging.debug(f"Analyze response: {result}")
+        return response
     except Exception as e:
         logging.error(f"Error in /analyze: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route('/chart/<timeframe>')
 def get_chart(timeframe):
     try:
         indicators = request.args.get('indicators', 'peaks,troughs,sma_20,sma_50,ema_9,rsi,macd,bb,fib,ichimoku').split(',')
+        logging.debug(f"Generating chart for {timeframe} with indicators: {indicators}")
         img = agent.plot_chart(timeframe, indicators)
         if img is None:
             logging.error(f"Chart generation failed for {timeframe}")
@@ -522,11 +534,12 @@ def get_chart(timeframe):
         return send_file(img, mimetype='image/png')
     except Exception as e:
         logging.error(f"Error in /chart: {str(e)}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.route('/price/<symbol>')
 def get_price(symbol):
     try:
+        logging.debug(f"Fetching price for {symbol}")
         ticker = agent.exchange.fetch_ticker(symbol)
         price = ticker.get('last', None)
         if price is None:
@@ -557,7 +570,8 @@ def get_symbols():
 @app.route('/sentiment/<symbol>')
 def get_sentiment(symbol):
     try:
-        sentiment_score = random.uniform(-1, 1)  # Simulated—real X analysis internally
+        logging.debug(f"Fetching sentiment for {symbol}")
+        sentiment_score = random.uniform(-1, 1)
         sentiment = "Bullish" if sentiment_score > 0.2 else "Bearish" if sentiment_score < -0.2 else "Neutral"
         logging.info(f"Sentiment for {symbol}: {sentiment} (score: {sentiment_score:.2f})")
         return jsonify({"sentiment": sentiment, "score": sentiment_score})
