@@ -29,7 +29,9 @@ app = Flask(__name__)
 
 class WaveGrok:
     def __init__(self, exchange_name="kraken"):
-        self.exchange = getattr(ccxt, exchange_name)()
+        self.exchange = getattr(ccxt, exchange_name)({
+            'enableRateLimit': True,  # Avoid Kraken rate limits
+        })
         self.markets = self.exchange.load_markets()
         self.data = {}
         self.closes = {}
@@ -441,9 +443,20 @@ def get_chart(timeframe):
 def get_price(symbol):
     try:
         ticker = agent.exchange.fetch_ticker(symbol)
-        return jsonify({"price": ticker['last']})
+        price = ticker.get('last', None)
+        if price is None:
+            logging.warning(f"No 'last' price in ticker for {symbol}: {ticker}")
+            return jsonify({"error": "No price data"}), 500
+        logging.info(f"Fetched price for {symbol}: ${price:.2f}")
+        return jsonify({"price": price})
+    except ccxt.NetworkError as e:
+        logging.error(f"Network error fetching price for {symbol}: {str(e)}")
+        return jsonify({"error": "Network issue"}), 503
+    except ccxt.ExchangeError as e:
+        logging.error(f"Exchange error fetching price for {symbol}: {str(e)}")
+        return jsonify({"error": "Invalid symbol or exchange issue"}), 400
     except Exception as e:
-        logging.error(f"Price fetch failed: {str(e)}")
+        logging.error(f"Unexpected error fetching price for {symbol}: {str(e)}")
         return jsonify({"error": "Price unavailable"}), 500
 
 if __name__ == "__main__":
