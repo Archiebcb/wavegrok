@@ -276,7 +276,7 @@ class WaveGrok:
         logging.info(f"Image buffer size after save: {img.tell()} bytes")  # Debug image buffer
         plt.close(fig)
         img.seek(0)
-        logging.info(f"Sending image with size: {img.tell()} bytes")  # Debug image size
+        logging.info(f"Sending image with size: {img.tell()} bytes after seek")  # Debug image size after seek
         return img
 
     def get_meme_hype(self, symbol):
@@ -463,7 +463,7 @@ def get_chart(timeframe):
     img = agent.plot_chart(timeframe)
     if img is None:
         return jsonify({"error": "No data"}), 400
-    logging.info(f"Sending image with size: {img.tell()} bytes")  # Debug image size
+    logging.info(f"Sending image with size: {img.tell()} bytes after seek")  # Debug image size after seek
     return send_file(img, mimetype='image/png')
 
 if __name__ == "__main__":
