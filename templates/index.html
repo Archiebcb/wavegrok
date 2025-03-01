@@ -67,7 +67,7 @@
             <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded transition">Fetch & Analyze</button>
         </form>
         <div id="message" class="mt-4 text-sm text-gray-300"></div>
-        <div id="price" class="mt-2 text-lg font-semibold text-indigo-400">Current Price: <span id="priceValue">N/A</span></div>
+        <div id="price" class="mt-2 text-lg font-semibold text-indigo-400">Current Price: <span id="priceValue">Loading...</span></div>
         <div id="sentiment" class="mt-2 text-lg font-semibold text-indigo-400">Market Sentiment: <span id="sentimentValue">Loading...</span></div>
     </div>
 
@@ -161,7 +161,7 @@
                     const analyzeResult = await analyzeResponse.json();
                     analysisDiv.textContent = analyzeResult.message;
 
-                    const sentimentResponse = await fetch(`/sentiment/${data.symbol}`);
+                    const sentimentResponse = await fetch(`/sentiment/${data.symbol.replace('/', '')}`); // Strip / for Kraken
                     const sentimentResult = await sentimentResponse.json();
                     sentimentDiv.textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
                 }
@@ -185,15 +185,33 @@
         });
 
         setInterval(async () => {
-            const symbol = document.getElementById('symbol').value;
+            const symbol = document.getElementById('symbol').value.replace('/', ''); // Strip / for Kraken
             if (symbol) {
-                const response = await fetch(`/price/${symbol}`);
-                const result = await response.json();
-                document.getElementById('priceValue').textContent = result.price ? `$${result.price.toFixed(2)}` : 'N/A';
+                let attempts = 0;
+                const maxAttempts = 3;
+                while (attempts < maxAttempts) {
+                    try {
+                        const priceResponse = await fetch(`/price/${symbol}`);
+                        if (!priceResponse.ok) throw new Error(`HTTP error! status: ${priceResponse.status}`);
+                        const priceResult = await priceResponse.json();
+                        document.getElementById('priceValue').textContent = priceResult.price ? `$${priceResult.price.toFixed(2)}` : 'N/A';
 
-                const sentimentResponse = await fetch(`/sentiment/${symbol}`);
-                const sentimentResult = await sentimentResponse.json();
-                document.getElementById('sentimentValue').textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
+                        const sentimentResponse = await fetch(`/sentiment/${symbol}`);
+                        if (!sentimentResponse.ok) throw new Error(`HTTP error! status: ${sentimentResponse.status}`);
+                        const sentimentResult = await sentimentResponse.json();
+                        document.getElementById('sentimentValue').textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
+                        break; // Success, exit loop
+                    } catch (error) {
+                        attempts++;
+                        console.error(`Attempt ${attempts} failed: ${error.message}`);
+                        if (attempts === maxAttempts) {
+                            document.getElementById('priceValue').textContent = 'N/A';
+                            document.getElementById('sentimentValue').textContent = 'N/A';
+                        } else {
+                            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+                        }
+                    }
+                }
             }
         }, 10000);
 
