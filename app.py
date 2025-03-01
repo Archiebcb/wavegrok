@@ -185,7 +185,7 @@ class WaveGrok:
         self.troughs[timeframe] = troughs
         return f"{timeframe}: Found {len(peaks)} peaks and {len(troughs)} troughs."
 
-    def plot_chart(self, timeframe):
+    def plot_chart(self, timeframe, indicators=None):
         if timeframe not in self.data:
             logging.error(f"No data for {timeframe}—fetch some first!")
             return None
@@ -193,6 +193,9 @@ class WaveGrok:
         if df.empty:
             logging.error(f"No data to plot for {timeframe}")
             return None
+
+        if indicators is None:
+            indicators = ['peaks', 'troughs', 'sma_20', 'sma_50', 'ema_9', 'rsi', 'macd']
 
         closes = df['close'].values
         peaks, _ = find_peaks(closes, distance=3, prominence=closes.std()/10)
@@ -206,19 +209,26 @@ class WaveGrok:
         peak_data[peaks] = df['close'].iloc[peaks]
         trough_data[troughs] = df['close'].iloc[troughs]
 
-        apdict = [
-            mpf.make_addplot(peak_data, type='scatter', markersize=100, marker='x', color='lime', label='Peaks'),
-            mpf.make_addplot(trough_data, type='scatter', markersize=100, marker='o', color='magenta', label='Troughs'),
-            mpf.make_addplot(df['sma_20'], color='cyan', linestyle='--', label='SMA 20'),
-            mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--', label='SMA 50'),
-            mpf.make_addplot(df['ema_9'], color='green', linestyle='-.', label='EMA 9'),
-        ]
+        apdict = []
+        if 'peaks' in indicators:
+            apdict.append(mpf.make_addplot(peak_data, type='scatter', markersize=100, marker='x', color='lime', label='Peaks'))
+        if 'troughs' in indicators:
+            apdict.append(mpf.make_addplot(trough_data, type='scatter', markersize=100, marker='o', color='magenta', label='Troughs'))
+        if 'sma_20' in indicators:
+            apdict.append(mpf.make_addplot(df['sma_20'], color='cyan', linestyle='--', label='SMA 20'))
+        if 'sma_50' in indicators:
+            apdict.append(mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--', label='SMA 50'))
+        if 'ema_9' in indicators:
+            apdict.append(mpf.make_addplot(df['ema_9'], color='green', linestyle='-.', label='EMA 9'))
 
-        panels = [
-            mpf.make_addplot(df['rsi'], panel=1, color='purple', ylabel='RSI'),
-            mpf.make_addplot(df['macd'], panel=2, color='blue', ylabel='MACD'),
-            mpf.make_addplot(df['macd_signal'], panel=2, color='orange'),
-        ]
+        panels = []
+        if 'rsi' in indicators:
+            panels.append(mpf.make_addplot(df['rsi'], panel=1, color='purple', ylabel='RSI'))
+        if 'macd' in indicators:
+            panels.extend([
+                mpf.make_addplot(df['macd'], panel=2, color='blue', ylabel='MACD'),
+                mpf.make_addplot(df['macd_signal'], panel=2, color='orange'),
+            ])
         apdict.extend(panels)
 
         buf = io.BytesIO()
@@ -420,7 +430,8 @@ def analyze():
 
 @app.route('/chart/<timeframe>')
 def get_chart(timeframe):
-    img = agent.plot_chart(timeframe)
+    indicators = request.args.get('indicators', 'peaks,troughs,sma_20,sma_50,ema_9,rsi,macd').split(',')
+    img = agent.plot_chart(timeframe, indicators)
     if img is None:
         return jsonify({"error": "No data"}), 400
     logging.info(f"Sending image with size: {img.tell()} bytes from route")

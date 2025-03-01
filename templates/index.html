@@ -50,6 +50,15 @@
                 <input type="number" id="limit" name="limit" placeholder="e.g., 500" 
                        class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white" required>
             </div>
+            <div class="grid grid-cols-2 gap-2">
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="peaks" checked class="mr-2"> Peaks</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="troughs" checked class="mr-2"> Troughs</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="sma_20" checked class="mr-2"> SMA 20</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="sma_50" checked class="mr-2"> SMA 50</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="ema_9" checked class="mr-2"> EMA 9</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="rsi" checked class="mr-2"> RSI</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="macd" checked class="mr-2"> MACD</label>
+            </div>
             <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded transition">Fetch & Analyze</button>
         </form>
         <div id="message" class="mt-4 text-sm text-gray-300"></div>
@@ -106,6 +115,7 @@
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData);
+            data.indicators = formData.getAll('indicators');
             const messageDiv = document.getElementById('message');
             const analysisDiv = document.getElementById('analysis');
             const loadingDiv = document.getElementById('loading');
@@ -123,7 +133,7 @@
 
                 if (fetchResult.message.includes('Fetched')) {
                     const chartImg = document.getElementById('chart');
-                    chartImg.src = `/chart/${data.timeframe}?t=${new Date().getTime()}`;
+                    chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
 
                     const analyzeResponse = await fetch('/analyze', {
                         method: 'POST',
@@ -139,6 +149,16 @@
             } finally {
                 loadingDiv.classList.add('hidden');
             }
+        });
+
+        document.querySelectorAll('input[name="indicators"]').forEach(checkbox => {
+            checkbox.addEventListener('change', async () => {
+                const formData = new FormData(document.getElementById('fetchForm'));
+                const data = Object.fromEntries(formData);
+                data.indicators = formData.getAll('indicators');
+                const chartImg = document.getElementById('chart');
+                chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
+            });
         });
 
         // Real-time price ticker
