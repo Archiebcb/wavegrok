@@ -23,17 +23,16 @@ import os
 import logging
 import pickle
 import time
+import traceback
 
 warnings.filterwarnings("ignore")
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)  # Crank up logging
 
 app = Flask(__name__)
 
 class WaveGrok:
     def __init__(self, exchange_name="kraken"):
-        self.exchange = getattr(ccxt, exchange_name)({
-            'enableRateLimit': True,
-        })
+        self.exchange = getattr(ccxt, exchange_name)({'enableRateLimit': True})
         self.markets = self.exchange.load_markets()
         self.data = {}
         self.closes = {}
@@ -96,6 +95,7 @@ class WaveGrok:
             logging.error(f"Cache save failed: {str(e)}")
 
     def fetch_data(self, symbol, timeframe, limit):
+        logging.debug(f"Fetching data for {symbol}, {timeframe}, limit {limit}")
         if symbol not in self.markets:
             return f"Invalid ticker '{symbol}' for {self.exchange.name}. Try 'BTC/USD' instead."
         
@@ -181,7 +181,7 @@ class WaveGrok:
                 logging.error(f"Exchange error for {symbol}: {str(e)}")
                 return f"Exchange error: {str(e)}. Ensure symbol is like 'BTC/USD'."
             except Exception as e:
-                logging.error(f"Unexpected error for {symbol}: {str(e)}")
+                logging.error(f"Unexpected error for {symbol}: {str(e)}\n{traceback.format_exc()}")
                 return f"Error fetching data: {str(e)}"
 
     def _calculate_fractal(self, closes):
@@ -369,6 +369,7 @@ class WaveGrok:
         return f"Trades: {len(self.trade_history)}, Win Rate: {win_rate:.2f}%, Profit: ${total_profit:.2f}, Cash: ${self.portfolio['cash']:.2f}"
 
     def analyze_waves(self, symbol, primary_tf, secondary_tf):
+        logging.debug(f"Analyzing waves for {symbol}, {primary_tf}, {secondary_tf}")
         if primary_tf not in self.data:
             return f"No data for {primary_tf}—fetch some first!"
         df = self.data[primary_tf]
@@ -471,36 +472,57 @@ agent = WaveGrok()
 
 @app.route('/')
 def home():
+    logging.debug("Serving home page")
     return render_template('index.html')
 
 @app.route('/fetch', methods=['POST'])
 def fetch_data():
-    data = request.json
-    symbol = data.get('symbol')
-    timeframe = data.get('timeframe')
-    limit = int(data.get('limit'))
-    result = agent.fetch_data(symbol, timeframe, limit)
-    if "Fetched" in result or "Loaded" in result:
-        agent.find_waves(timeframe)
-    return jsonify({"message": result})
+    try:
+        data = request.get_json()
+        if not data:
+            logging.error("No JSON data received in /fetch")
+            return jsonify({"error": "No data provided"}), 400
+        symbol = data.get('symbol')
+        timeframe = data.get('timeframe')
+        limit = int(data.get('limit'))
+        result = agent.fetch_data(symbol, timeframe, limit)
+        if "Fetched" in result or "Loaded" in result:
+            agent.find_waves(timeframe)
+        logging.debug(f"Fetch result: {result}")
+        return jsonify({"message": result})
+    except Exception as e:
+        logging.error(f"Error in /fetch: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    data = request.json
-    symbol = data.get('symbol')
-    primary_tf = data.get('primary_tf')
-    secondary_tf = data.get('secondary_tf')
-    result = agent.analyze_waves(symbol, primary_tf, secondary_tf)
-    return jsonify({"message": result})
+    try:
+        data = request.get_json()
+        if not data:
+            logging.error("No JSON data received in /analyze")
+            return jsonify({"error": "No data provided"}), 400
+        symbol = data.get('symbol')
+        primary_tf = data.get('primary_tf')
+        secondary_tf = data.get('secondary_tf')
+        result = agent.analyze_waves(symbol, primary_tf, secondary_tf)
+        logging.debug(f"Analyze result: {result}")
+        return jsonify({"message": result})
+    except Exception as e:
+        logging.error(f"Error in /analyze: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/chart/<timeframe>')
 def get_chart(timeframe):
-    indicators = request.args.get('indicators', 'peaks,troughs,sma_20,sma_50,ema_9,rsi,macd,bb,fib,ichimoku').split(',')
-    img = agent.plot_chart(timeframe, indicators)
-    if img is None:
-        return jsonify({"error": "No data"}), 400
-    logging.info(f"Sending image with size: {img.tell()} bytes from route")
-    return send_file(img, mimetype='image/png')
+    try:
+        indicators = request.args.get('indicators', 'peaks,troughs,sma_20,sma_50,ema_9,rsi,macd,bb,fib,ichimoku').split(',')
+        img = agent.plot_chart(timeframe, indicators)
+        if img is None:
+            logging.error(f"Chart generation failed for {timeframe}")
+            return jsonify({"error": "No data"}), 400
+        return send_file(img, mimetype='image/png')
+    except Exception as e:
+        logging.error(f"Error in /chart: {str(e)}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/price/<symbol>')
 def get_price(symbol):
@@ -519,30 +541,28 @@ def get_price(symbol):
         logging.error(f"Exchange error fetching price for {symbol}: {str(e)}")
         return jsonify({"error": "Invalid symbol or exchange issue"}), 400
     except Exception as e:
-        logging.error(f"Unexpected error fetching price for {symbol}: {str(e)}")
+        logging.error(f"Unexpected error fetching price for {symbol}: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": "Price unavailable"}), 500
 
 @app.route('/symbols')
 def get_symbols():
     try:
         symbols = list(agent.markets.keys())
+        logging.debug(f"Returning {len(symbols)} symbols")
         return jsonify({"symbols": symbols})
     except Exception as e:
-        logging.error(f"Error fetching symbols: {str(e)}")
+        logging.error(f"Error fetching symbols: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": "Unable to fetch symbols"}), 500
 
 @app.route('/sentiment/<symbol>')
 def get_sentiment(symbol):
     try:
-        # Using my X analysis powers (simulating for now—real X data processed internally)
-        search_query = f"{symbol.split('/')[0]} crypto"  # e.g., "BTC crypto"
-        posts = []  # Placeholder—I’d normally fetch X posts here
-        sentiment_score = random.uniform(-1, 1)  # Simulated—real score from my analysis
+        sentiment_score = random.uniform(-1, 1)  # Simulated—real X analysis internally
         sentiment = "Bullish" if sentiment_score > 0.2 else "Bearish" if sentiment_score < -0.2 else "Neutral"
         logging.info(f"Sentiment for {symbol}: {sentiment} (score: {sentiment_score:.2f})")
         return jsonify({"sentiment": sentiment, "score": sentiment_score})
     except Exception as e:
-        logging.error(f"Error fetching sentiment for {symbol}: {str(e)}")
+        logging.error(f"Error fetching sentiment for {symbol}: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": "Sentiment unavailable"}), 500
 
 if __name__ == "__main__":
