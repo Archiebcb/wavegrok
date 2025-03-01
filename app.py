@@ -10,7 +10,7 @@ import io
 import random
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Sequential  # Works with tensorflow-macos
 from tensorflow.keras.layers import LSTM, Dense
 from ta.momentum import RSIIndicator, StochasticOscillator, WilliamsRIndicator
 from ta.trend import MACD, ADXIndicator, CCIIndicator, IchimokuIndicator, SMAIndicator, EMAIndicator
@@ -21,6 +21,8 @@ from datetime import datetime
 import warnings
 import os
 import logging
+import pickle
+import time
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO)
@@ -30,7 +32,7 @@ app = Flask(__name__)
 class WaveGrok:
     def __init__(self, exchange_name="kraken"):
         self.exchange = getattr(ccxt, exchange_name)({
-            'enableRateLimit': True,  # Avoid Kraken rate limits
+            'enableRateLimit': True,
         })
         self.markets = self.exchange.load_markets()
         self.data = {}
@@ -46,6 +48,7 @@ class WaveGrok:
         self.epsilon = 0.3
         self.alpha = 0.1
         self.gamma = 0.9
+        self.cache_file = "wavegrok_cache.pkl"
 
     def _init_rf_model(self):
         X = np.array([
@@ -67,75 +70,119 @@ class WaveGrok:
         model.fit(X, y, epochs=1, verbose=0)
         return model
 
+    def _load_cache(self, symbol, timeframe):
+        try:
+            if os.path.exists(self.cache_file):
+                with open(self.cache_file, 'rb') as f:
+                    cache = pickle.load(f)
+                    key = f"{symbol}_{timeframe}"
+                    if key in cache and (time.time() - cache[key]['timestamp']) < 300:  # 5-min cache
+                        return cache[key]['data']
+        except Exception as e:
+            logging.error(f"Cache load failed: {str(e)}")
+        return None
+
+    def _save_cache(self, symbol, timeframe, data):
+        try:
+            cache = {}
+            if os.path.exists(self.cache_file):
+                with open(self.cache_file, 'rb') as f:
+                    cache = pickle.load(f)
+            key = f"{symbol}_{timeframe}"
+            cache[key] = {'data': data, 'timestamp': time.time()}
+            with open(self.cache_file, 'wb') as f:
+                pickle.dump(cache, f)
+        except Exception as e:
+            logging.error(f"Cache save failed: {str(e)}")
+
     def fetch_data(self, symbol, timeframe, limit):
         if symbol not in self.markets:
             return f"Invalid ticker '{symbol}' for {self.exchange.name}. Try 'BTC/USD' instead."
-        try:
-            timeframe_map = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440}
-            kraken_interval = timeframe_map.get(timeframe.lower(), 60)
-            ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=kraken_interval, limit=limit)
-            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
-            df.set_index('timestamp', inplace=True)
+        
+        cached_data = self._load_cache(symbol, timeframe)
+        if cached_data is not None:
+            self.data[timeframe] = cached_data
+            self.closes[timeframe] = cached_data['close'].values
+            return f"Loaded {limit} {timeframe} candles for {symbol} from cache."
 
-            df['momentum'] = df['close'].pct_change()
-            df['volume_change'] = df['volume'].pct_change()
-            df['sma_20'] = SMAIndicator(df['close'], window=20).sma_indicator()
-            df['sma_50'] = SMAIndicator(df['close'], window=50).sma_indicator()
-            df['sma_200'] = SMAIndicator(df['close'], window=200).sma_indicator()
-            df['ema_9'] = EMAIndicator(df['close'], window=9).ema_indicator()
-            df['ema_21'] = EMAIndicator(df['close'], window=21).ema_indicator()
-            df['ema_50'] = EMAIndicator(df['close'], window=50).ema_indicator()
-            macd = MACD(df['close'])
-            df['macd'] = macd.macd()
-            df['macd_signal'] = macd.macd_signal()
-            df['macd_histogram'] = macd.macd_diff()
-            df['adx'] = ADXIndicator(df['high'], df['low'], df['close']).adx()
-            df['psar'] = self._calculate_psar(df['high'], df['low'])
-            ichimoku = IchimokuIndicator(df['high'], df['low'])
-            df['ichimoku_a'] = ichimoku.ichimoku_a()
-            df['ichimoku_b'] = ichimoku.ichimoku_b()
-            df['ichimoku_cloud'] = df['ichimoku_a'] - df['ichimoku_b']
-            df['rsi'] = RSIIndicator(df['close'], window=14).rsi()
-            stoch = StochasticOscillator(df['high'], df['low'], df['close'])
-            df['stoch_k'] = stoch.stoch()
-            df['stoch_d'] = stoch.stoch_signal()
-            df['cci'] = CCIIndicator(df['high'], df['low'], df['close']).cci()
-            df['roc'] = df['close'].pct_change(periods=12) * 100
-            df['williams_r'] = WilliamsRIndicator(df['high'], df['low'], df['close']).williams_r()
-            bb = BollingerBands(df['close'])
-            df['bb_upper'] = bb.bollinger_hband()
-            df['bb_lower'] = bb.bollinger_lband()
-            df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['close']
-            df['atr'] = AverageTrueRange(df['high'], df['low'], df['close']).average_true_range()
-            df['std_dev'] = df['close'].rolling(window=20).std()
-            dc = DonchianChannel(df['high'], df['low'], df['close'])
-            df['donchian_upper'] = dc.donchian_channel_hband()
-            df['donchian_lower'] = dc.donchian_channel_lband()
-            df['obv'] = OnBalanceVolumeIndicator(df['close'], df['volume']).on_balance_volume()
-            df['vwap'] = VolumeWeightedAveragePrice(df['high'], df['low'], df['close'], df['volume']).volume_weighted_average_price()
-            df['vwap_diff'] = (df['close'] - df['vwap']) / df['vwap']
-            df['cmf'] = ChaikinMoneyFlowIndicator(df['high'], df['low'], df['close'], df['volume']).chaikin_money_flow()
-            df['force'] = ForceIndexIndicator(df['close'], df['volume']).force_index()
-            df['adl'] = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low']) * df['volume']
-            df['adl'] = df['adl'].cumsum().fillna(0)
-            df['fractal'] = self._calculate_fractal(df['close'])
-            df['fib_236'] = self._calculate_fibonacci(df, 0.236)
-            df['fib_382'] = self._calculate_fibonacci(df, 0.382)
-            df['fib_618'] = self._calculate_fibonacci(df, 0.618)
-            df['pivot_high'] = df['high'].rolling(window=5, center=True).max()
-            df['pivot_low'] = df['low'].rolling(window=5, center=True).min()
-            df['moon_phase'] = self._get_moon_phase(df.index[-1])
+        for attempt in range(3):
+            try:
+                timeframe_map = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440}
+                kraken_interval = timeframe_map.get(timeframe.lower(), 60)
+                ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=kraken_interval, limit=limit)
+                df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
+                df.set_index('timestamp', inplace=True)
 
-            df.dropna(how='all', inplace=True)
-            if df.empty:
-                return f"No valid data for {symbol} on {timeframe} after cleaning."
+                df['momentum'] = df['close'].pct_change()
+                df['volume_change'] = df['volume'].pct_change()
+                df['sma_20'] = SMAIndicator(df['close'], window=20).sma_indicator()
+                df['sma_50'] = SMAIndicator(df['close'], window=50).sma_indicator()
+                df['sma_200'] = SMAIndicator(df['close'], window=200).sma_indicator()
+                df['ema_9'] = EMAIndicator(df['close'], window=9).ema_indicator()
+                df['ema_21'] = EMAIndicator(df['close'], window=21).ema_indicator()
+                df['ema_50'] = EMAIndicator(df['close'], window=50).ema_indicator()
+                macd = MACD(df['close'])
+                df['macd'] = macd.macd()
+                df['macd_signal'] = macd.macd_signal()
+                df['macd_histogram'] = macd.macd_diff()
+                df['adx'] = ADXIndicator(df['high'], df['low'], df['close']).adx()
+                df['psar'] = self._calculate_psar(df['high'], df['low'])
+                ichimoku = IchimokuIndicator(df['high'], df['low'])
+                df['ichimoku_a'] = ichimoku.ichimoku_a()
+                df['ichimoku_b'] = ichimoku.ichimoku_b()
+                df['ichimoku_cloud'] = df['ichimoku_a'] - df['ichimoku_b']
+                df['rsi'] = RSIIndicator(df['close'], window=14).rsi()
+                stoch = StochasticOscillator(df['high'], df['low'], df['close'])
+                df['stoch_k'] = stoch.stoch()
+                df['stoch_d'] = stoch.stoch_signal()
+                df['cci'] = CCIIndicator(df['high'], df['low'], df['close']).cci()
+                df['roc'] = df['close'].pct_change(periods=12) * 100
+                df['williams_r'] = WilliamsRIndicator(df['high'], df['low'], df['close']).williams_r()
+                bb = BollingerBands(df['close'])
+                df['bb_upper'] = bb.bollinger_hband()
+                df['bb_lower'] = bb.bollinger_lband()
+                df['bb_width'] = (df['bb_upper'] - df['bb_lower']) / df['close']
+                df['atr'] = AverageTrueRange(df['high'], df['low'], df['close']).average_true_range()
+                df['std_dev'] = df['close'].rolling(window=20).std()
+                dc = DonchianChannel(df['high'], df['low'], df['close'])
+                df['donchian_upper'] = dc.donchian_channel_hband()
+                df['donchian_lower'] = dc.donchian_channel_lband()
+                df['obv'] = OnBalanceVolumeIndicator(df['close'], df['volume']).on_balance_volume()
+                df['vwap'] = VolumeWeightedAveragePrice(df['high'], df['low'], df['close'], df['volume']).volume_weighted_average_price()
+                df['vwap_diff'] = (df['close'] - df['vwap']) / df['vwap']
+                df['cmf'] = ChaikinMoneyFlowIndicator(df['high'], df['low'], df['close'], df['volume']).chaikin_money_flow()
+                df['force'] = ForceIndexIndicator(df['close'], df['volume']).force_index()
+                df['adl'] = ((df['close'] - df['low']) - (df['high'] - df['close'])) / (df['high'] - df['low']) * df['volume']
+                df['adl'] = df['adl'].cumsum().fillna(0)
+                df['fractal'] = self._calculate_fractal(df['close'])
+                df['fib_236'] = self._calculate_fibonacci(df, 0.236)
+                df['fib_382'] = self._calculate_fibonacci(df, 0.382)
+                df['fib_618'] = self._calculate_fibonacci(df, 0.618)
+                df['pivot_high'] = df['high'].rolling(window=5, center=True).max()
+                df['pivot_low'] = df['low'].rolling(window=5, center=True).min()
+                df['moon_phase'] = self._get_moon_phase(df.index[-1])
 
-            self.data[timeframe] = df
-            self.closes[timeframe] = df['close'].values
-            return f"Fetched {limit} {timeframe} candles for {symbol}."
-        except Exception as e:
-            return f"Error fetching data from {self.exchange.name}: {str(e)}. Ensure symbol is like 'BTC/USD' and timeframe is valid."
+                df.dropna(how='all', inplace=True)
+                if df.empty:
+                    return f"No valid data for {symbol} on {timeframe} after cleaning."
+
+                self.data[timeframe] = df
+                self.closes[timeframe] = df['close'].values
+                self._save_cache(symbol, timeframe, df)
+                return f"Fetched {limit} {timeframe} candles for {symbol}."
+            except ccxt.NetworkError as e:
+                logging.error(f"Network error on attempt {attempt + 1} for {symbol}: {str(e)}")
+                if attempt < 2:
+                    time.sleep(2)
+                    continue
+                return f"Network error fetching data: {str(e)}"
+            except ccxt.ExchangeError as e:
+                logging.error(f"Exchange error for {symbol}: {str(e)}")
+                return f"Exchange error: {str(e)}. Ensure symbol is like 'BTC/USD'."
+            except Exception as e:
+                logging.error(f"Unexpected error for {symbol}: {str(e)}")
+                return f"Error fetching data: {str(e)}"
 
     def _calculate_fractal(self, closes):
         return (closes.rolling(5).max() - closes.rolling(5).min()) / closes
@@ -197,7 +244,7 @@ class WaveGrok:
             return None
 
         if indicators is None:
-            indicators = ['peaks', 'troughs', 'sma_20', 'sma_50', 'ema_9', 'rsi', 'macd']
+            indicators = ['peaks', 'troughs', 'sma_20', 'sma_50', 'ema_9', 'rsi', 'macd', 'bb', 'fib', 'ichimoku']
 
         closes = df['close'].values
         peaks, _ = find_peaks(closes, distance=3, prominence=closes.std()/10)
@@ -222,6 +269,22 @@ class WaveGrok:
             apdict.append(mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--', label='SMA 50'))
         if 'ema_9' in indicators:
             apdict.append(mpf.make_addplot(df['ema_9'], color='green', linestyle='-.', label='EMA 9'))
+        if 'bb' in indicators:
+            apdict.extend([
+                mpf.make_addplot(df['bb_upper'], color='orange', linestyle='--', label='BB Upper'),
+                mpf.make_addplot(df['bb_lower'], color='orange', linestyle='--', label='BB Lower'),
+            ])
+        if 'fib' in indicators:
+            apdict.extend([
+                mpf.make_addplot(df['fib_236'], color='pink', linestyle='-', label='Fib 23.6%'),
+                mpf.make_addplot(df['fib_382'], color='pink', linestyle='-.', label='Fib 38.2%'),
+                mpf.make_addplot(df['fib_618'], color='pink', linestyle='--', label='Fib 61.8%'),
+            ])
+        if 'ichimoku' in indicators:
+            apdict.extend([
+                mpf.make_addplot(df['ichimoku_a'], color='red', linestyle='-', label='Ichimoku A'),
+                mpf.make_addplot(df['ichimoku_b'], color='green', linestyle='-', label='Ichimoku B'),
+            ])
 
         panels = []
         if 'rsi' in indicators:
@@ -243,7 +306,7 @@ class WaveGrok:
             volume=True,
             addplot=apdict,
             figscale=2.0,
-            figsize=(16, 10),
+            figsize=(16, 12),
             savefig=dict(fname=buf, format='png', bbox_inches='tight', dpi=150)
         )
         logging.info(f"Number of addplot items: {len(apdict)}")
@@ -417,7 +480,7 @@ def fetch_data():
     timeframe = data.get('timeframe')
     limit = int(data.get('limit'))
     result = agent.fetch_data(symbol, timeframe, limit)
-    if "Fetched" in result:
+    if "Fetched" in result or "Loaded" in result:
         agent.find_waves(timeframe)
     return jsonify({"message": result})
 
@@ -432,7 +495,7 @@ def analyze():
 
 @app.route('/chart/<timeframe>')
 def get_chart(timeframe):
-    indicators = request.args.get('indicators', 'peaks,troughs,sma_20,sma_50,ema_9,rsi,macd').split(',')
+    indicators = request.args.get('indicators', 'peaks,troughs,sma_20,sma_50,ema_9,rsi,macd,bb,fib,ichimoku').split(',')
     img = agent.plot_chart(timeframe, indicators)
     if img is None:
         return jsonify({"error": "No data"}), 400
@@ -458,6 +521,15 @@ def get_price(symbol):
     except Exception as e:
         logging.error(f"Unexpected error fetching price for {symbol}: {str(e)}")
         return jsonify({"error": "Price unavailable"}), 500
+
+@app.route('/symbols')
+def get_symbols():
+    try:
+        symbols = list(agent.markets.keys())
+        return jsonify({"symbols": symbols})
+    except Exception as e:
+        logging.error(f"Error fetching symbols: {str(e)}")
+        return jsonify({"error": "Unable to fetch symbols"}), 500
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
