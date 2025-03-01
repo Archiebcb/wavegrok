@@ -296,7 +296,7 @@ class WaveGrok:
         if state_str not in self.q_table:
             self.q_table[state_str] = {"Buy": 0, "Sell": 0, "Hold": 0}
         if next_state_str not in self.q_table:
-            self.q_table[next_state_str] = {"Buy": 0, "Sell": 0, "Hold": 0"}
+            self.q_table[next_state_str] = {"Buy": 0, "Sell": 0, "Hold": 0}
         old_value = self.q_table[state_str][action]
         next_max = max(self.q_table[next_state_str].values())
         new_value = old_value + self.alpha * (reward + self.gamma * next_max - old_value)
