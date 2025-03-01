@@ -426,6 +426,15 @@ def get_chart(timeframe):
     logging.info(f"Sending image with size: {img.tell()} bytes from route")
     return send_file(img, mimetype='image/png')
 
+@app.route('/price/<symbol>')
+def get_price(symbol):
+    try:
+        ticker = agent.exchange.fetch_ticker(symbol)
+        return jsonify({"price": ticker['last']})
+    except Exception as e:
+        logging.error(f"Price fetch failed: {str(e)}")
+        return jsonify({"error": "Price unavailable"}), 500
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=False)

@@ -53,6 +53,7 @@
             <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded transition">Fetch & Analyze</button>
         </form>
         <div id="message" class="mt-4 text-sm text-gray-300"></div>
+        <div id="price" class="mt-2 text-lg font-semibold text-indigo-400">Current Price: <span id="priceValue">N/A</span></div>
     </div>
 
     <div class="w-full max-w-4xl">
@@ -139,6 +140,16 @@
                 loadingDiv.classList.add('hidden');
             }
         });
+
+        // Real-time price ticker
+        setInterval(async () => {
+            const symbol = document.getElementById('symbol').value;
+            if (symbol) {
+                const response = await fetch(`/price/${symbol}`);
+                const result = await response.json();
+                document.getElementById('priceValue').textContent = result.price ? `$${result.price.toFixed(2)}` : 'N/A';
+            }
+        }, 10000); // Updates every 10 seconds
     </script>
 </body>
 </html>
