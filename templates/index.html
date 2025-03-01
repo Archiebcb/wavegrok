@@ -2,68 +2,142 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>WaveGrok</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wave Grok</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .dark-theme { background-color: #1a1a2e; color: #e0e0e0; }
+        .light-theme { background-color: #f0f4f8; color: #333; }
+        .chart-container { max-width: 100%; overflow-x: auto; }
+        img { max-width: 100%; height: auto; border-radius: 8px; }
+        .legend { display: flex; flex-wrap: wrap; gap: 1rem; }
+        .legend-item { display: flex; align-items: center; }
+        .legend-color { width: 1rem; height: 1rem; margin-right: 0.5rem; }
+        .dark-theme .bg-gray-800 { background-color: #2d3748; }
+        .light-theme .bg-gray-800 { background-color: #ffffff; }
+        .dark-theme .text-gray-300 { color: #d1d5db; }
+        .light-theme .text-gray-300 { color: #4a5568; }
+    </style>
 </head>
-<body>
-    <h1>WaveGrok</h1>
-    <form id="fetchForm" method="POST" action="/fetch">
-        <input type="text" name="symbol" value="BTC/USD" required>
-        <input type="text" name="timeframe" value="4h" required>
-        <input type="number" name="limit" value="500" required>
-        <button type="submit">Fetch Data</button>
-    </form>
-    <button onclick="analyzeWaves()">Analyze Waves</button>
-    <button onclick="showChart()">Show Chart</button>
-    <div id="result"></div>
-    <div id="chartContainer">
-        <img id="chartImage" src="" alt="Chart" style="max-width: 100%; height: auto;">
+<body class="dark-theme min-h-screen flex flex-col items-center p-4 transition-colors duration-300">
+    <div class="w-full max-w-4xl flex justify-between items-center mb-6">
+        <h1 class="text-4xl font-bold text-indigo-400">Wave Grok</h1>
+        <button id="themeToggle" class="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded transition">Switch to Light Mode</button>
+    </div>
+
+    <div class="w-full max-w-md bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
+        <form id="fetchForm" class="space-y-4">
+            <div>
+                <label for="symbol" class="block text-sm font-medium">Symbol</label>
+                <input type="text" id="symbol" name="symbol" placeholder="e.g., BTC/USD" 
+                       class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white" required>
+            </div>
+            <div>
+                <label for="timeframe" class="block text-sm font-medium">Timeframe</label>
+                <select id="timeframe" name="timeframe" 
+                        class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white">
+                    <option value="1m">1 Minute</option>
+                    <option value="5m">5 Minutes</option>
+                    <option value="15m">15 Minutes</option>
+                    <option value="30m">30 Minutes</option>
+                    <option value="1h">1 Hour</option>
+                    <option value="4h" selected>4 Hours</option>
+                    <option value="1d">1 Day</option>
+                </select>
+            </div>
+            <div>
+                <label for="limit" class="block text-sm font-medium">Limit</label>
+                <input type="number" id="limit" name="limit" placeholder="e.g., 500" 
+                       class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white" required>
+            </div>
+            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded transition">Fetch & Analyze</button>
+        </form>
+        <div id="message" class="mt-4 text-sm text-gray-300"></div>
+    </div>
+
+    <div class="w-full max-w-4xl">
+        <div class="chart-container mb-6">
+            <img id="chart" alt="Chart" class="rounded shadow-lg">
+        </div>
+        <div class="legend mb-6">
+            <div class="legend-item"><span class="legend-color" style="background-color: lime;"></span> Peaks</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: magenta;"></span> Troughs</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: cyan;"></span> SMA 20</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: yellow;"></span> SMA 50</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: green;"></span> EMA 9</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: purple;"></span> RSI</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: blue;"></span> MACD</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: orange;"></span> MACD Signal</div>
+        </div>
+        <div id="analysis" class="bg-gray-800 p-6 rounded-lg shadow-lg text-sm text-gray-300 whitespace-pre-wrap"></div>
+    </div>
+
+    <div id="loading" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center">
+        <div class="animate-spin h-10 w-10 border-4 border-indigo-500 border-t-transparent rounded-full"></div>
     </div>
 
     <script>
-        async function fetchData() {
-            const response = await fetch('/fetch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    symbol: document.querySelector('input[name="symbol"]').value,
-                    timeframe: document.querySelector('input[name="timeframe"]').value,
-                    limit: document.querySelector('input[name="limit"]').value
-                })
-            });
-            const data = await response.json();
-            document.getElementById('result').innerText = data.message;
-        }
+        const themeToggle = document.getElementById('themeToggle');
+        const body = document.body;
 
-        async function analyzeWaves() {
-            const response = await fetch('/analyze', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    symbol: document.querySelector('input[name="symbol"]').value,
-                    primary_tf: document.querySelector('input[name="timeframe"]').value,
-                    secondary_tf: document.querySelector('input[name="timeframe"]').value
-                })
-            });
-            const data = await response.json();
-            document.getElementById('result').innerText = data.message;
-        }
-
-        async function showChart() {
-            const timeframe = document.querySelector('input[name="timeframe"]').value;
-            const response = await fetch(`/chart/${timeframe}`);
-            if (response.ok) {
-                const blob = await response.blob();
-                const url = URL.createObjectURL(blob);
-                document.getElementById('chartImage').src = url;
+        themeToggle.addEventListener('click', () => {
+            if (body.classList.contains('dark-theme')) {
+                body.classList.remove('dark-theme');
+                body.classList.add('light-theme');
+                themeToggle.textContent = 'Switch to Dark Mode';
+                localStorage.setItem('theme', 'light');
             } else {
-                const error = await response.json();
-                document.getElementById('result').innerText = error.error || 'Error loading chart';
+                body.classList.remove('light-theme');
+                body.classList.add('dark-theme');
+                themeToggle.textContent = 'Switch to Light Mode';
+                localStorage.setItem('theme', 'dark');
             }
+        });
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'light') {
+            body.classList.remove('dark-theme');
+            body.classList.add('light-theme');
+            themeToggle.textContent = 'Switch to Dark Mode';
         }
 
         document.getElementById('fetchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
-            await fetchData();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            const messageDiv = document.getElementById('message');
+            const analysisDiv = document.getElementById('analysis');
+            const loadingDiv = document.getElementById('loading');
+            messageDiv.textContent = 'Fetching data...';
+            loadingDiv.classList.remove('hidden');
+
+            try {
+                const fetchResponse = await fetch('/fetch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const fetchResult = await fetchResponse.json();
+                messageDiv.textContent = fetchResult.message;
+
+                if (fetchResult.message.includes('Fetched')) {
+                    const chartImg = document.getElementById('chart');
+                    chartImg.src = `/chart/${data.timeframe}?t=${new Date().getTime()}`;
+
+                    const analyzeResponse = await fetch('/analyze', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ symbol: data.symbol, primary_tf: data.timeframe, secondary_tf: data.timeframe })
+                    });
+                    const analyzeResult = await analyzeResponse.json();
+                    analysisDiv.textContent = analyzeResult.message;
+                }
+            } catch (error) {
+                messageDiv.textContent = 'Error: ' + error.message;
+                analysisDiv.textContent = '';
+            } finally {
+                loadingDiv.classList.add('hidden');
+            }
         });
     </script>
 </body>

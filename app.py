@@ -3,7 +3,7 @@ import ccxt
 import pandas as pd
 from scipy.signal import find_peaks
 import matplotlib
-matplotlib.use('Agg')  # Non-interactive backend for server
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import mplfinance as mpf
 import io
@@ -199,82 +199,40 @@ class WaveGrok:
         troughs, _ = find_peaks(-closes, distance=3, prominence=closes.std()/10)
 
         candle_data = df[['open', 'high', 'low', 'close', 'volume']].copy()
-        candle_data.columns = ['Open', 'High', 'Low', 'Close', 'Volume']  # Standardize column names for mplfinance
+        candle_data.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
 
-        # Pad peaks and troughs
         peak_data = np.full(len(df), np.nan)
         trough_data = np.full(len(df), np.nan)
         peak_data[peaks] = df['close'].iloc[peaks]
         trough_data[troughs] = df['close'].iloc[troughs]
 
-        # Log data validity
-        logging.info(f"df.index: {len(df.index)}, peaks: {len(peaks)}/{len(peak_data)} (valid: {np.sum(~np.isnan(peak_data))}), troughs: {len(troughs)}/{len(trough_data)} (valid: {np.sum(~np.isnan(trough_data))})")
-        logging.info(f"sma_20: {len(df['sma_20'])} (valid: {np.sum(~np.isnan(df['sma_20']))}), sma_50: {len(df['sma_50'])} (valid: {np.sum(~np.isnan(df['sma_50']))}), sma_200: {len(df['sma_200'])} (valid: {np.sum(~np.isnan(df['sma_200']))})")
-        logging.info(f"ema_9: {len(df['ema_9'])} (valid: {np.sum(~np.isnan(df['ema_9']))}), psar: {len(df['psar'])} (valid: {np.sum(~np.isnan(df['psar']))})")
-        logging.info(f"bb_upper: {len(df['bb_upper'])} (valid: {np.sum(~np.isnan(df['bb_upper']))}), bb_lower: {len(df['bb_lower'])} (valid: {np.sum(~np.isnan(df['bb_lower']))})")
-        logging.info(f"donchian_upper: {len(df['donchian_upper'])} (valid: {np.sum(~np.isnan(df['donchian_upper']))}), donchian_lower: {len(df['donchian_lower'])} (valid: {np.sum(~np.isnan(df['donchian_lower']))})")
-        logging.info(f"fib_236: {len(df['fib_236'])} (valid: {np.sum(~np.isnan(df['fib_236']))}), fib_382: {len(df['fib_382'])} (valid: {np.sum(~np.isnan(df['fib_382']))}), fib_618: {len(df['fib_618'])} (valid: {np.sum(~np.isnan(df['fib_618']))})")
-        logging.info(f"rsi: {len(df['rsi'])}, macd: {len(df['macd'])}, atr: {len(df['atr'])}")
+        apdict = [
+            mpf.make_addplot(peak_data, type='scatter', markersize=100, marker='x', color='lime', label='Peaks'),
+            mpf.make_addplot(trough_data, type='scatter', markersize=100, marker='o', color='magenta', label='Troughs'),
+            mpf.make_addplot(df['sma_20'], color='cyan', linestyle='--', label='SMA 20'),
+            mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--', label='SMA 50'),
+            mpf.make_addplot(df['ema_9'], color='green', linestyle='-.', label='EMA 9'),
+        ]
 
-        # Define additional plots
-        apdict = []
-        if np.sum(~np.isnan(peak_data)) > 0:
-            apdict.append(mpf.make_addplot(peak_data, type='scatter', markersize=100, marker='x', color='lime'))
-        if np.sum(~np.isnan(trough_data)) > 0:
-            apdict.append(mpf.make_addplot(trough_data, type='scatter', markersize=100, marker='o', color='magenta'))
-        if np.sum(~np.isnan(df['sma_20'])) > 0:
-            apdict.append(mpf.make_addplot(df['sma_20'], color='cyan', linestyle='--'))
-        if np.sum(~np.isnan(df['sma_50'])) > 0:
-            apdict.append(mpf.make_addplot(df['sma_50'], color='yellow', linestyle='--'))
-        if np.sum(~np.isnan(df['sma_200'])) > 0:
-            apdict.append(mpf.make_addplot(df['sma_200'], color='red', linestyle='--'))
-        if np.sum(~np.isnan(df['ema_9'])) > 0:
-            apdict.append(mpf.make_addplot(df['ema_9'], color='green', linestyle='-.'))
-        if np.sum(~np.isnan(df['psar'])) > 0:
-            apdict.append(mpf.make_addplot(df['psar'], color='purple', linestyle=':'))
-        if np.sum(~np.isnan(df['bb_upper'])) > 0:
-            apdict.append(mpf.make_addplot(df['bb_upper'], color='orange', linestyle='--'))
-        if np.sum(~np.isnan(df['bb_lower'])) > 0:
-            apdict.append(mpf.make_addplot(df['bb_lower'], color='orange', linestyle='--'))
-        if np.sum(~np.isnan(df['donchian_upper'])) > 0:
-            apdict.append(mpf.make_addplot(df['donchian_upper'], color='blue', linestyle='--'))
-        if np.sum(~np.isnan(df['donchian_lower'])) > 0:
-            apdict.append(mpf.make_addplot(df['donchian_lower'], color='blue', linestyle='--'))
-        if np.sum(~np.isnan(df['fib_236'])) > 0:
-            apdict.append(mpf.make_addplot(df['fib_236'], color='pink', linestyle='-'))
-        if np.sum(~np.isnan(df['fib_382'])) > 0:
-            apdict.append(mpf.make_addplot(df['fib_382'], color='pink', linestyle='-.'))
-        if np.sum(~np.isnan(df['fib_618'])) > 0:
-            apdict.append(mpf.make_addplot(df['fib_618'], color='pink', linestyle='--'))
-
-        # Panels for indicators
         panels = [
             mpf.make_addplot(df['rsi'], panel=1, color='purple', ylabel='RSI'),
             mpf.make_addplot(df['macd'], panel=2, color='blue', ylabel='MACD'),
             mpf.make_addplot(df['macd_signal'], panel=2, color='orange'),
-            mpf.make_addplot(df['macd_histogram'], panel=2, type='bar', color='gray', alpha=0.5),
-            mpf.make_addplot(df['atr'], panel=3, color='orange', ylabel='ATR'),
-            mpf.make_addplot(df['stoch_k'], panel=4, color='blue', ylabel='Stoch'),
-            mpf.make_addplot(df['stoch_d'], panel=4, color='red', linestyle='--'),
-            mpf.make_addplot(df['cci'], panel=5, color='green', ylabel='CCI'),
-            mpf.make_addplot(df['obv'], panel=6, color='purple', ylabel='OBV'),
-            mpf.make_addplot(df['cmf'], panel=7, color='cyan', ylabel='CMF')
         ]
         apdict.extend(panels)
 
-        # Create buffer and plot directly to it
         buf = io.BytesIO()
         mpf.plot(
             candle_data,
             type='candle',
-            style='charles',
-            title=f'{timeframe} Chart',
+            style='yahoo',
+            title=f'{timeframe.upper()} Chart',
             ylabel='Price',
             volume=True,
             addplot=apdict,
-            figscale=1.5,
-            figsize=(12, 24),
-            savefig=dict(fname=buf, format='png', bbox_inches='tight', dpi=100)
+            figscale=2.0,
+            figsize=(16, 10),
+            savefig=dict(fname=buf, format='png', bbox_inches='tight', dpi=150)
         )
         logging.info(f"Number of addplot items: {len(apdict)}")
         logging.info(f"Image buffer size after save: {buf.tell()} bytes")
@@ -333,8 +291,7 @@ class WaveGrok:
         wins = sum(1 for t in self.trade_history if t["profit"] > 0)
         win_rate = wins / len(self.trade_history) * 100
         total_profit = sum(t["profit"] for t in self.trade_history)
-        return (f"Trades: {len(self.trade_history)}, Win Rate: {win_rate:.2f}%, "
-                f"Profit: ${total_profit:.2f}, Cash: ${self.portfolio['cash']:.2f}")
+        return f"Trades: {len(self.trade_history)}, Win Rate: {win_rate:.2f}%, Profit: ${total_profit:.2f}, Cash: ${self.portfolio['cash']:.2f}"
 
     def analyze_waves(self, symbol, primary_tf, secondary_tf):
         if primary_tf not in self.data:
