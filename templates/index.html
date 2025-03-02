@@ -3,98 +3,223 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wave Grok</title>
+    <title>Wave Grok - Quantum Trading Hub</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
     <style>
-        .dark-theme { background-color: #1a1a2e; color: #e0e0e0; }
-        .light-theme { background-color: #f0f4f8; color: #333; }
-        .chart-container { max-width: 100%; overflow-x: auto; }
-        img { max-width: 100%; height: auto; border-radius: 8px; }
-        .legend { display: flex; flex-wrap: wrap; gap: 1rem; }
-        .legend-item { display: flex; align-items: center; }
-        .legend-color { width: 1rem; height: 1rem; margin-right: 0.5rem; }
-        .dark-theme .bg-gray-800 { background-color: #2d3748; }
-        .light-theme .bg-gray-800 { background-color: #ffffff; }
-        .dark-theme .text-gray-300 { color: #d1d5db; }
-        .light-theme .text-gray-300 { color: #4a5568; }
-        #suggestions { position: absolute; z-index: 10; max-height: 200px; overflow-y: auto; }
+        /* Futuristic base styles */
+        body {
+            font-family: 'Orbitron', sans-serif;
+            background: linear-gradient(135deg, #0d1b2a 0%, #1b263b 50%, #415a77 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+        /* Animated background particles */
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            background: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="10" height="10"%3E%3Ccircle cx="5" cy="5" r="1" fill="rgba(255,255,255,0.1)" /%3E%3C/svg%3E');
+            animation: drift 20s infinite linear;
+        }
+        @keyframes drift {
+            0% { transform: translate(0, 0); }
+            50% { transform: translate(50px, 50px); }
+            100% { transform: translate(0, 0); }
+        }
+        /* Neon glow effects */
+        .neon-glow {
+            box-shadow: 0 0 10px #00d4ff, 0 0 20px #00d4ff, 0 0 30px #00d4ff;
+            transition: all 0.3s ease;
+        }
+        .neon-glow:hover {
+            box-shadow: 0 0 15px #00ffcc, 0 0 30px #00ffcc, 0 0 45px #00ffcc;
+        }
+        /* Card styling */
+        .card {
+            background: rgba(27, 38, 59, 0.9);
+            border: 1px solid #00d4ff;
+            border-radius: 12px;
+            backdrop-filter: blur(5px);
+        }
+        /* Input and button styles */
+        input, select {
+            background: #0d1b2a;
+            border: 1px solid #415a77;
+            color: #e0e0e0;
+            padding: 0.75rem;
+            border-radius: 8px;
+            transition: border-color 0.3s ease;
+        }
+        input:focus, select:focus {
+            border-color: #00d4ff;
+            outline: none;
+        }
+        button {
+            background: linear-gradient(90deg, #00d4ff, #00ffcc);
+            color: #0d1b2a;
+            font-weight: bold;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            transition: transform 0.2s ease;
+        }
+        button:hover {
+            transform: scale(1.05);
+        }
+        /* Chart and analysis container */
+        .chart-container, #analysis {
+            max-width: 100%;
+            margin: 0 auto;
+        }
+        #chart {
+            border-radius: 12px;
+            border: 1px solid #415a77;
+        }
+        /* Suggestions dropdown */
+        #suggestions {
+            position: absolute;
+            z-index: 20;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #0d1b2a;
+            border: 1px solid #00d4ff;
+            border-radius: 8px;
+        }
+        /* Legend */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            padding: 1rem;
+            background: rgba(27, 38, 59, 0.7);
+            border-radius: 12px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+        .legend-color {
+            width: 1rem;
+            height: 1rem;
+            margin-right: 0.5rem;
+            border-radius: 50%;
+        }
+        /* Loading spinner */
+        #loading {
+            background: rgba(13, 27, 42, 0.8);
+        }
+        .spinner {
+            border: 4px solid #00d4ff;
+            border-top: 4px solid transparent;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
-<body class="dark-theme min-h-screen flex flex-col items-center p-4 transition-colors duration-300">
-    <div class="w-full max-w-4xl flex justify-between items-center mb-6">
-        <h1 class="text-4xl font-bold text-indigo-400">Wave Grok</h1>
-        <button id="themeToggle" class="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded transition">Switch to Light Mode</button>
-    </div>
+<body class="flex flex-col items-center p-6">
+    <div class="particles"></div>
+    <div class="w-full max-w-5xl z-10">
+        <h1 class="text-5xl font-bold text-center mb-8" style="background: linear-gradient(90deg, #00d4ff, #00ffcc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            Wave Grok
+        </h1>
 
-    <div class="w-full max-w-md bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
-        <form id="fetchForm" class="space-y-4">
-            <div class="relative">
-                <label for="symbol" class="block text-sm font-medium">Symbol</label>
-                <input type="text" id="symbol" name="symbol" placeholder="e.g., XBT/USD, ETH/USD" 
-                       class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white" required>
-                <div id="suggestions" class="hidden w-full bg-gray-700 border border-gray-600 rounded mt-1"></div>
+        <!-- Control Panel -->
+        <div class="card p-6 mb-8 neon-glow">
+            <form id="fetchForm" class="space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="exchange" class="block text-sm font-medium mb-1">Exchange</label>
+                        <select id="exchange" name="exchange" class="w-full">
+                            <option value="kraken">Kraken</option>
+                            <option value="binance">Binance</option>
+                        </select>
+                    </div>
+                    <div class="relative">
+                        <label for="symbol" class="block text-sm font-medium mb-1">Symbol</label>
+                        <input type="text" id="symbol" name="symbol" placeholder="e.g., XBT/USD, BTC/USDT" class="w-full" required>
+                        <div id="suggestions" class="hidden w-full"></div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="timeframe" class="block text-sm font-medium mb-1">Timeframe</label>
+                        <select id="timeframe" name="timeframe" class="w-full">
+                            <option value="1m">1 Minute</option>
+                            <option value="5m">5 Minutes</option>
+                            <option value="15m">15 Minutes</option>
+                            <option value="30m">30 Minutes</option>
+                            <option value="1h">1 Hour</option>
+                            <option value="4h" selected>4 Hours</option>
+                            <option value="1d">1 Day</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="limit" class="block text-sm font-medium mb-1">Data Points</label>
+                        <input type="number" id="limit" name="limit" value="500" class="w-full" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Indicators</label>
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="peaks" checked class="mr-2"> Peaks</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="troughs" checked class="mr-2"> Troughs</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="sma_20" checked class="mr-2"> SMA 20</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="sma_50" checked class="mr-2"> SMA 50</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="ema_9" checked class="mr-2"> EMA 9</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="rsi" checked class="mr-2"> RSI</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="macd" checked class="mr-2"> MACD</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="bb" checked class="mr-2"> Bollinger</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="fib" checked class="mr-2"> Fibonacci</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="ichimoku" checked class="mr-2"> Ichimoku</label>
+                    </div>
+                </div>
+                <button type="submit" class="w-full neon-glow">Analyze Now</button>
+            </form>
+            <div id="message" class="mt-4 text-sm text-center"></div>
+            <div class="flex justify-between mt-4 text-lg">
+                <div>Price: <span id="priceValue" class="font-bold text-[#00ffcc]">Loading...</span></div>
+                <div>Sentiment: <span id="sentimentValue" class="font-bold text-[#00ffcc]">Loading...</span></div>
             </div>
-            <div>
-                <label for="timeframe" class="block text-sm font-medium">Timeframe</label>
-                <select id="timeframe" name="timeframe" 
-                        class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white">
-                    <option value="1m">1 Minute</option>
-                    <option value="5m">5 Minutes</option>
-                    <option value="15m">15 Minutes</option>
-                    <option value="30m">30 Minutes</option>
-                    <option value="1h">1 Hour</option>
-                    <option value="4h" selected>4 Hours</option>
-                    <option value="1d">1 Day</option>
-                </select>
-            </div>
-            <div>
-                <label for="limit" class="block text-sm font-medium">Limit</label>
-                <input type="number" id="limit" name="limit" value="500" 
-                       class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white" required>
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-                <label class="flex items-center"><input type="checkbox" name="indicators" value="peaks" checked class="mr-2"> Peaks</label>
-                <label class="flex items-center"><input type="checkbox" name="indicators" value="troughs" checked class="mr-2"> Troughs</label>
-                <label class="flex items-center"><input type="checkbox" name="indicators" value="sma_20" checked class="mr-2"> SMA 20</label>
-                <label class="flex items-center"><input type="checkbox" name="indicators" value="sma_50" checked class="mr-2"> SMA 50</label>
-                <label class="flex items-center"><input type="checkbox" name="indicators" value="ema_9" checked class="mr-2"> EMA 9</label>
-                <label class="flex items-center"><input type="checkbox" name="indicators" value="rsi" checked class="mr-2"> RSI</label>
-                <label class="flex items-center"><input type="checkbox" name="indicators" value="macd" checked class="mr-2"> MACD</label>
-                <label class="flex items-center"><input type="checkbox" name="indicators" value="bb" checked class="mr-2"> Bollinger Bands</label>
-                <label class="flex items-center"><input type="checkbox" name="indicators" value="fib" checked class="mr-2"> Fibonacci</label>
-                <label class="flex items-center"><input type="checkbox" name="indicators" value="ichimoku" checked class="mr-2"> Ichimoku Cloud</label>
-            </div>
-            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded transition">Fetch & Analyze</button>
-        </form>
-        <div id="message" class="mt-4 text-sm text-gray-300"></div>
-        <div id="price" class="mt-2 text-lg font-semibold text-indigo-400">Current Price: <span id="priceValue">Loading...</span></div>
-        <div id="sentiment" class="mt-2 text-lg font-semibold text-indigo-400">Market Sentiment: <span id="sentimentValue">Loading...</span></div>
-    </div>
-
-    <div class="w-full max-w-4xl">
-        <div class="chart-container mb-6">
-            <img id="chart" alt="Chart" class="rounded shadow-lg">
         </div>
-        <button id="download" class="mb-6 bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded">Download Chart</button>
-        <div class="legend mb-6">
-            <div class="legend-item"><span class="legend-color" style="background-color: lime;"></span> Peaks</div>
-            <div class="legend-item"><span class="legend-color" style="background-color: magenta;"></span> Troughs</div>
-            <div class="legend-item"><span class="legend-color" style="background-color: cyan;"></span> SMA 20</div>
-            <div class="legend-item"><span class="legend-color" style="background-color: yellow;"></span> SMA 50</div>
-            <div class="legend-item"><span class="legend-color" style="background-color: green;"></span> EMA 9</div>
-            <div class="legend-item"><span class="legend-color" style="background-color: purple;"></span> RSI</div>
-            <div class="legend-item"><span class="legend-color" style="background-color: blue;"></span> MACD</div>
-            <div class="legend-item"><span class="legend-color" style="background-color: orange;"></span> MACD Signal</div>
-            <div class="legend-item"><span class="legend-color" style="background-color: orange;"></span> Bollinger Bands</div>
-            <div class="legend-item"><span class="legend-color" style="background-color: pink;"></span> Fibonacci Levels</div>
-            <div class="legend-item"><span class="legend-color" style="background-color: red;"></span> Ichimoku A</div>
-            <div class="legend-item"><span class="legend-color" style="background-color: green;"></span> Ichimoku B</div>
-        </div>
-        <div id="analysis" class="bg-gray-800 p-6 rounded-lg shadow-lg text-sm text-gray-300 whitespace-pre-wrap"></div>
-    </div>
 
-    <div id="loading" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center">
-        <div class="animate-spin h-10 w-10 border-4 border-indigo-500 border-t-transparent rounded-full"></div>
+        <!-- Chart and Analysis -->
+        <div class="space-y-8">
+            <div class="chart-container card p-4">
+                <img id="chart" alt="Chart" class="w-full">
+                <button id="download" class="mt-4 mx-auto block neon-glow">Download Chart</button>
+            </div>
+            <div class="legend card p-4">
+                <div class="legend-item"><span class="legend-color" style="background-color: lime;"></span> Peaks</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: magenta;"></span> Troughs</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: cyan;"></span> SMA 20</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: yellow;"></span> SMA 50</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: green;"></span> EMA 9</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: purple;"></span> RSI</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: blue;"></span> MACD</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: orange;"></span> MACD Signal</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: orange;"></span> Bollinger Bands</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: pink;"></span> Fibonacci Levels</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: red;"></span> Ichimoku A</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: green;"></span> Ichimoku B</div>
+            </div>
+            <div id="analysis" class="card p-6 text-sm whitespace-pre-wrap"></div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loading" class="hidden fixed inset-0 flex items-center justify-center z-50">
+            <div class="spinner h-12 w-12 rounded-full"></div>
+        </div>
     </div>
 
     <script>
@@ -104,34 +229,11 @@
             .then(data => symbols = data.symbols || [])
             .catch(error => console.error('Error fetching symbols:', error));
 
-        const themeToggle = document.getElementById('themeToggle');
-        const body = document.body;
-
-        themeToggle.addEventListener('click', () => {
-            if (body.classList.contains('dark-theme')) {
-                body.classList.remove('dark-theme');
-                body.classList.add('light-theme');
-                themeToggle.textContent = 'Switch to Dark Mode';
-                localStorage.setItem('theme', 'light');
-            } else {
-                body.classList.remove('light-theme');
-                body.classList.add('dark-theme');
-                themeToggle.textContent = 'Switch to Light Mode';
-                localStorage.setItem('theme', 'dark');
-            }
-        });
-
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme === 'light') {
-            body.classList.remove('dark-theme');
-            body.classList.add('light-theme');
-            themeToggle.textContent = 'Switch to Dark Mode';
-        }
-
         document.getElementById('fetchForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const data = Object.fromEntries(formData);
+            data.symbol = `${document.getElementById('exchange').value}:${data.symbol}`;
             data.indicators = formData.getAll('indicators');
             const messageDiv = document.getElementById('message');
             const analysisDiv = document.getElementById('analysis');
@@ -181,25 +283,25 @@
             checkbox.addEventListener('change', async () => {
                 const formData = new FormData(document.getElementById('fetchForm'));
                 const data = Object.fromEntries(formData);
+                data.symbol = `${document.getElementById('exchange').value}:${data.symbol}`;
                 data.indicators = formData.getAll('indicators');
                 const chartImg = document.getElementById('chart');
                 chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
             });
         });
 
-        // Optimized price/sentiment polling
+        const socket = io.connect('http://' + window.location.host);
+        socket.on('price_update', (data) => {
+            const currentSymbol = `${document.getElementById('exchange').value}:${document.getElementById('symbol').value}`;
+            if (data.symbol === currentSymbol) {
+                document.getElementById('priceValue').textContent = data.price ? `$${data.price.toFixed(2)}` : 'N/A';
+            }
+        });
+
         async function updateLiveData() {
-            const symbol = document.getElementById('symbol').value;
+            const symbol = `${document.getElementById('exchange').value}:${document.getElementById('symbol').value}`;
             if (!symbol) return;
             try {
-                const priceResponse = await fetch(`/price/${symbol}`);
-                if (priceResponse.ok) {
-                    const priceResult = await priceResponse.json();
-                    document.getElementById('priceValue').textContent = priceResult.price ? `$${priceResult.price.toFixed(2)}` : 'N/A';
-                } else {
-                    document.getElementById('priceValue').textContent = 'N/A';
-                }
-
                 const sentimentResponse = await fetch(`/sentiment/${symbol}`);
                 if (sentimentResponse.ok) {
                     const sentimentResult = await sentimentResponse.json();
@@ -209,17 +311,16 @@
                 }
             } catch (error) {
                 console.error('Live data update failed:', error);
-                document.getElementById('priceValue').textContent = 'N/A';
                 document.getElementById('sentimentValue').textContent = 'N/A';
             }
         }
-        setInterval(updateLiveData, 15000);  // Poll every 15s, not 10s, to reduce load
-        updateLiveData();  // Initial call
+        setInterval(updateLiveData, 15000);
+        updateLiveData();
 
-        // Chart refresh only on fetch success
         async function refreshChart() {
             const formData = new FormData(document.getElementById('fetchForm'));
             const data = Object.fromEntries(formData);
+            data.symbol = `${document.getElementById('exchange').value}:${data.symbol}`;
             data.indicators = formData.getAll('indicators');
             if (data.symbol && data.timeframe && data.limit) {
                 try {
@@ -237,7 +338,7 @@
                 }
             }
         }
-        setInterval(refreshChart, 120000);  // Refresh chart every 2min
+        setInterval(refreshChart, 120000);
 
         const symbolInput = document.getElementById('symbol');
         const suggestionsDiv = document.getElementById('suggestions');
@@ -252,13 +353,385 @@
                 suggestionsDiv.classList.add('hidden');
                 return;
             }
-            suggestionsDiv.innerHTML = matches.map(s => `<div class="p-2 hover:bg-gray-600 cursor-pointer">${s}</div>`).join('');
+            suggestionsDiv.innerHTML = matches.map(s => `<div class="p-2 hover:bg-[#415a77] cursor-pointer">${s.split(':')[1]}</div>`).join('');
             suggestionsDiv.classList.remove('hidden');
             suggestionsDiv.querySelectorAll('div').forEach(item => {
                 item.addEventListener('click', () => {
                     symbolInput.value = item.textContent;
                     suggestionsDiv.classList.add('hidden');
-                    updateLiveData();  // Update immediately on selection
+                    updateLiveData();
+                });
+            });
+        });
+        symbolInput.addEventListener('focus', () => {
+            if (symbolInput.value.length >= 2) suggestionsDiv.classList.remove('hidden');
+        });
+        symbolInput.addEventListener('blur', () => setTimeout(() => suggestionsDiv.classList.add('hidden'), 200));
+
+        document.getElementById('download').addEventListener('click', () => {
+            const chartImg = document.getElementById('chart');
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wave Grok - Quantum Trading Hub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        /* Futuristic base styles */
+        body {
+            font-family: 'Orbitron', sans-serif;
+            background: linear-gradient(135deg, #0d1b2a 0%, #1b263b 50%, #415a77 100%);
+            color: #e0e0e0;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+        /* Animated background particles */
+        .particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            background: url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="10" height="10"%3E%3Ccircle cx="5" cy="5" r="1" fill="rgba(255,255,255,0.1)" /%3E%3C/svg%3E');
+            animation: drift 20s infinite linear;
+        }
+        @keyframes drift {
+            0% { transform: translate(0, 0); }
+            50% { transform: translate(50px, 50px); }
+            100% { transform: translate(0, 0); }
+        }
+        /* Neon glow effects */
+        .neon-glow {
+            box-shadow: 0 0 10px #00d4ff, 0 0 20px #00d4ff, 0 0 30px #00d4ff;
+            transition: all 0.3s ease;
+        }
+        .neon-glow:hover {
+            box-shadow: 0 0 15px #00ffcc, 0 0 30px #00ffcc, 0 0 45px #00ffcc;
+        }
+        /* Card styling */
+        .card {
+            background: rgba(27, 38, 59, 0.9);
+            border: 1px solid #00d4ff;
+            border-radius: 12px;
+            backdrop-filter: blur(5px);
+        }
+        /* Input and button styles */
+        input, select {
+            background: #0d1b2a;
+            border: 1px solid #415a77;
+            color: #e0e0e0;
+            padding: 0.75rem;
+            border-radius: 8px;
+            transition: border-color 0.3s ease;
+        }
+        input:focus, select:focus {
+            border-color: #00d4ff;
+            outline: none;
+        }
+        button {
+            background: linear-gradient(90deg, #00d4ff, #00ffcc);
+            color: #0d1b2a;
+            font-weight: bold;
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            transition: transform 0.2s ease;
+        }
+        button:hover {
+            transform: scale(1.05);
+        }
+        /* Chart and analysis container */
+        .chart-container, #analysis {
+            max-width: 100%;
+            margin: 0 auto;
+        }
+        #chart {
+            border-radius: 12px;
+            border: 1px solid #415a77;
+        }
+        /* Suggestions dropdown */
+        #suggestions {
+            position: absolute;
+            z-index: 20;
+            max-height: 200px;
+            overflow-y: auto;
+            background: #0d1b2a;
+            border: 1px solid #00d4ff;
+            border-radius: 8px;
+        }
+        /* Legend */
+        .legend {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            padding: 1rem;
+            background: rgba(27, 38, 59, 0.7);
+            border-radius: 12px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            font-size: 0.9rem;
+        }
+        .legend-color {
+            width: 1rem;
+            height: 1rem;
+            margin-right: 0.5rem;
+            border-radius: 50%;
+        }
+        /* Loading spinner */
+        #loading {
+            background: rgba(13, 27, 42, 0.8);
+        }
+        .spinner {
+            border: 4px solid #00d4ff;
+            border-top: 4px solid transparent;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center p-6">
+    <div class="particles"></div>
+    <div class="w-full max-w-5xl z-10">
+        <h1 class="text-5xl font-bold text-center mb-8" style="background: linear-gradient(90deg, #00d4ff, #00ffcc); -webkit-background-clip: text; -webkit-text-fill-color: transparent;">
+            Wave Grok
+        </h1>
+
+        <!-- Control Panel -->
+        <div class="card p-6 mb-8 neon-glow">
+            <form id="fetchForm" class="space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="exchange" class="block text-sm font-medium mb-1">Exchange</label>
+                        <select id="exchange" name="exchange" class="w-full">
+                            <option value="kraken">Kraken</option>
+                            <option value="binance">Binance</option>
+                        </select>
+                    </div>
+                    <div class="relative">
+                        <label for="symbol" class="block text-sm font-medium mb-1">Symbol</label>
+                        <input type="text" id="symbol" name="symbol" placeholder="e.g., XBT/USD, BTC/USDT" class="w-full" required>
+                        <div id="suggestions" class="hidden w-full"></div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="timeframe" class="block text-sm font-medium mb-1">Timeframe</label>
+                        <select id="timeframe" name="timeframe" class="w-full">
+                            <option value="1m">1 Minute</option>
+                            <option value="5m">5 Minutes</option>
+                            <option value="15m">15 Minutes</option>
+                            <option value="30m">30 Minutes</option>
+                            <option value="1h">1 Hour</option>
+                            <option value="4h" selected>4 Hours</option>
+                            <option value="1d">1 Day</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="limit" class="block text-sm font-medium mb-1">Data Points</label>
+                        <input type="number" id="limit" name="limit" value="500" class="w-full" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-2">Indicators</label>
+                    <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="peaks" checked class="mr-2"> Peaks</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="troughs" checked class="mr-2"> Troughs</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="sma_20" checked class="mr-2"> SMA 20</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="sma_50" checked class="mr-2"> SMA 50</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="ema_9" checked class="mr-2"> EMA 9</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="rsi" checked class="mr-2"> RSI</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="macd" checked class="mr-2"> MACD</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="bb" checked class="mr-2"> Bollinger</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="fib" checked class="mr-2"> Fibonacci</label>
+                        <label class="flex items-center"><input type="checkbox" name="indicators" value="ichimoku" checked class="mr-2"> Ichimoku</label>
+                    </div>
+                </div>
+                <button type="submit" class="w-full neon-glow">Analyze Now</button>
+            </form>
+            <div id="message" class="mt-4 text-sm text-center"></div>
+            <div class="flex justify-between mt-4 text-lg">
+                <div>Price: <span id="priceValue" class="font-bold text-[#00ffcc]">Loading...</span></div>
+                <div>Sentiment: <span id="sentimentValue" class="font-bold text-[#00ffcc]">Loading...</span></div>
+            </div>
+        </div>
+
+        <!-- Chart and Analysis -->
+        <div class="space-y-8">
+            <div class="chart-container card p-4">
+                <img id="chart" alt="Chart" class="w-full">
+                <button id="download" class="mt-4 mx-auto block neon-glow">Download Chart</button>
+            </div>
+            <div class="legend card p-4">
+                <div class="legend-item"><span class="legend-color" style="background-color: lime;"></span> Peaks</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: magenta;"></span> Troughs</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: cyan;"></span> SMA 20</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: yellow;"></span> SMA 50</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: green;"></span> EMA 9</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: purple;"></span> RSI</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: blue;"></span> MACD</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: orange;"></span> MACD Signal</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: orange;"></span> Bollinger Bands</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: pink;"></span> Fibonacci Levels</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: red;"></span> Ichimoku A</div>
+                <div class="legend-item"><span class="legend-color" style="background-color: green;"></span> Ichimoku B</div>
+            </div>
+            <div id="analysis" class="card p-6 text-sm whitespace-pre-wrap"></div>
+        </div>
+
+        <!-- Loading Overlay -->
+        <div id="loading" class="hidden fixed inset-0 flex items-center justify-center z-50">
+            <div class="spinner h-12 w-12 rounded-full"></div>
+        </div>
+    </div>
+
+    <script>
+        let symbols = [];
+        fetch('/symbols')
+            .then(response => response.json())
+            .then(data => symbols = data.symbols || [])
+            .catch(error => console.error('Error fetching symbols:', error));
+
+        document.getElementById('fetchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = Object.fromEntries(formData);
+            data.symbol = `${document.getElementById('exchange').value}:${data.symbol}`;
+            data.indicators = formData.getAll('indicators');
+            const messageDiv = document.getElementById('message');
+            const analysisDiv = document.getElementById('analysis');
+            const sentimentDiv = document.getElementById('sentimentValue');
+            const loadingDiv = document.getElementById('loading');
+            messageDiv.textContent = 'Fetching data...';
+            loadingDiv.classList.remove('hidden');
+
+            try {
+                const fetchResponse = await fetch('/fetch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (!fetchResponse.ok) throw new Error(`Fetch failed: ${fetchResponse.status}`);
+                const fetchResult = await fetchResponse.json();
+                messageDiv.textContent = fetchResult.message;
+
+                if (fetchResult.message.includes('Fetched') || fetchResult.message.includes('Loaded')) {
+                    const chartImg = document.getElementById('chart');
+                    chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
+
+                    const analyzeResponse = await fetch('/analyze', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ symbol: data.symbol, primary_tf: data.timeframe, secondary_tf: data.timeframe })
+                    });
+                    if (!analyzeResponse.ok) throw new Error(`Analyze failed: ${analyzeResponse.status}`);
+                    const analyzeResult = await analyzeResponse.json();
+                    analysisDiv.textContent = analyzeResult.message;
+
+                    const sentimentResponse = await fetch(`/sentiment/${data.symbol}`);
+                    if (!sentimentResponse.ok) throw new Error(`Sentiment failed: ${sentimentResponse.status}`);
+                    const sentimentResult = await sentimentResponse.json();
+                    sentimentDiv.textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
+                }
+            } catch (error) {
+                messageDiv.textContent = 'Error: ' + error.message;
+                analysisDiv.textContent = '';
+                sentimentDiv.textContent = 'N/A';
+            } finally {
+                loadingDiv.classList.add('hidden');
+            }
+        });
+
+        document.querySelectorAll('input[name="indicators"]').forEach(checkbox => {
+            checkbox.addEventListener('change', async () => {
+                const formData = new FormData(document.getElementById('fetchForm'));
+                const data = Object.fromEntries(formData);
+                data.symbol = `${document.getElementById('exchange').value}:${data.symbol}`;
+                data.indicators = formData.getAll('indicators');
+                const chartImg = document.getElementById('chart');
+                chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
+            });
+        });
+
+        const socket = io.connect('http://' + window.location.host);
+        socket.on('price_update', (data) => {
+            const currentSymbol = `${document.getElementById('exchange').value}:${document.getElementById('symbol').value}`;
+            if (data.symbol === currentSymbol) {
+                document.getElementById('priceValue').textContent = data.price ? `$${data.price.toFixed(2)}` : 'N/A';
+            }
+        });
+
+        async function updateLiveData() {
+            const symbol = `${document.getElementById('exchange').value}:${document.getElementById('symbol').value}`;
+            if (!symbol) return;
+            try {
+                const sentimentResponse = await fetch(`/sentiment/${symbol}`);
+                if (sentimentResponse.ok) {
+                    const sentimentResult = await sentimentResponse.json();
+                    document.getElementById('sentimentValue').textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
+                } else {
+                    document.getElementById('sentimentValue').textContent = 'N/A';
+                }
+            } catch (error) {
+                console.error('Live data update failed:', error);
+                document.getElementById('sentimentValue').textContent = 'N/A';
+            }
+        }
+        setInterval(updateLiveData, 15000);
+        updateLiveData();
+
+        async function refreshChart() {
+            const formData = new FormData(document.getElementById('fetchForm'));
+            const data = Object.fromEntries(formData);
+            data.symbol = `${document.getElementById('exchange').value}:${data.symbol}`;
+            data.indicators = formData.getAll('indicators');
+            if (data.symbol && data.timeframe && data.limit) {
+                try {
+                    const response = await fetch('/fetch', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    if (response.ok) {
+                        const chartImg = document.getElementById('chart');
+                        chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
+                    }
+                } catch (error) {
+                    console.error('Chart refresh failed:', error);
+                }
+            }
+        }
+        setInterval(refreshChart, 120000);
+
+        const symbolInput = document.getElementById('symbol');
+        const suggestionsDiv = document.getElementById('suggestions');
+        symbolInput.addEventListener('input', () => {
+            const query = symbolInput.value.toUpperCase();
+            if (query.length < 2) {
+                suggestionsDiv.classList.add('hidden');
+                return;
+            }
+            const matches = symbols.filter(s => s.toUpperCase().includes(query)).slice(0, 10);
+            if (matches.length === 0) {
+                suggestionsDiv.classList.add('hidden');
+                return;
+            }
+            suggestionsDiv.innerHTML = matches.map(s => `<div class="p-2 hover:bg-[#415a77] cursor-pointer">${s.split(':')[1]}</div>`).join('');
+            suggestionsDiv.classList.remove('hidden');
+            suggestionsDiv.querySelectorAll('div').forEach(item => {
+                item.addEventListener('click', () => {
+                    symbolInput.value = item.textContent;
+                    suggestionsDiv.classList.add('hidden');
+                    updateLiveData();
                 });
             });
         });
