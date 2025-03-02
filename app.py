@@ -35,7 +35,7 @@ class WaveGrok:
         self.exchange = getattr(ccxt, exchange_name)({'enableRateLimit': True})
         self.markets = self.exchange.load_markets()
         self.valid_symbols = list(self.markets.keys())
-        logging.info(f"Loaded {len(self.valid_symbols)} valid symbols: {self.valid_symbols[:10]}...")  # Log first 10 for debug
+        logging.info(f"Loaded {len(self.valid_symbols)} valid symbols: {self.valid_symbols[:10]}...")
         self.data = {}
         self.closes = {}
         self.peaks = {}
@@ -331,7 +331,7 @@ class WaveGrok:
 
     def auto_trade(self, symbol, action, price, confidence):
         trade_size = 1000 * (1 + random.uniform(0, 0.5) if confidence > 0.85 else 1)
-        if action == "Buy" and self-die.portfolio["cash"] >= trade_size:
+        if action == "Buy" and self.portfolio["cash"] >= trade_size:
             units = trade_size / price
             self.trades.append({"symbol": symbol, "entry_price": price, "units": units, "time": datetime.now(), "confidence": confidence})
             self.portfolio["cash"] -= trade_size
