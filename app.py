@@ -37,12 +37,17 @@ class WaveGrok:
     def __init__(self, exchange_name="kraken"):
         self.exchange = getattr(ccxt, exchange_name)({'enableRateLimit': True})
         try:
-            self.markets = self.exchange.load_markets()
+            # Force fresh market load
+            self.markets = self.exchange.load_markets(reload=True)
             self.valid_symbols = list(self.markets.keys())
-            logging.info(f"Loaded {len(self.valid_symbols)} valid symbols from Kraken: {self.valid_symbols[:10]}...")
+            logging.info(f"Loaded {len(self.valid_symbols)} valid symbols from Kraken: {self.valid_symbols}")
         except Exception as e:
             logging.error(f"Failed to load markets: {str(e)}\n{traceback.format_exc()}")
-            self.valid_symbols = ['XBT/USD', 'ETH/USD', 'XRP/USD']  # Fallback
+            # Broad fallback list including common pairs
+            self.valid_symbols = [
+                'XBT/USD', 'ETH/USD', 'XRP/USD', 'LTC/USD', 'BCH/USD',
+                'ADA/USD', 'DOT/USD', 'LINK/USD', 'XLM/USD', 'EOS/USD'
+            ]
             logging.info(f"Using fallback symbols: {self.valid_symbols}")
         self.data = {}
         self.closes = {}
