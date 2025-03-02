@@ -30,7 +30,7 @@
         <form id="fetchForm" class="space-y-4">
             <div class="relative">
                 <label for="symbol" class="block text-sm font-medium">Symbol</label>
-                <input type="text" id="symbol" name="symbol" placeholder="e.g., BTC/USD" 
+                <input type="text" id="symbol" name="symbol" placeholder="e.g., XXBTZUSD" 
                        class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white" required>
                 <div id="suggestions" class="hidden w-full bg-gray-700 border border-gray-600 rounded mt-1"></div>
             </div>
@@ -161,7 +161,7 @@
                     const analyzeResult = await analyzeResponse.json();
                     analysisDiv.textContent = analyzeResult.message;
 
-                    const sentimentResponse = await fetch(`/sentiment/${data.symbol.replace('/', '')}`); // Strip / for Kraken
+                    const sentimentResponse = await fetch(`/sentiment/${data.symbol}`);
                     const sentimentResult = await sentimentResponse.json();
                     sentimentDiv.textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
                 }
@@ -185,7 +185,7 @@
         });
 
         setInterval(async () => {
-            const symbol = document.getElementById('symbol').value.replace('/', ''); // Strip / for Kraken
+            const symbol = document.getElementById('symbol').value;
             if (symbol) {
                 let attempts = 0;
                 const maxAttempts = 3;
@@ -200,7 +200,7 @@
                         if (!sentimentResponse.ok) throw new Error(`HTTP error! status: ${sentimentResponse.status}`);
                         const sentimentResult = await sentimentResponse.json();
                         document.getElementById('sentimentValue').textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
-                        break; // Success, exit loop
+                        break;
                     } catch (error) {
                         attempts++;
                         console.error(`Attempt ${attempts} failed: ${error.message}`);
@@ -208,7 +208,7 @@
                             document.getElementById('priceValue').textContent = 'N/A';
                             document.getElementById('sentimentValue').textContent = 'N/A';
                         } else {
-                            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+                            await new Promise(resolve => setTimeout(resolve, 2000));
                         }
                     }
                 }

@@ -34,6 +34,7 @@ class WaveGrok:
     def __init__(self, exchange_name="kraken"):
         self.exchange = getattr(ccxt, exchange_name)({'enableRateLimit': True})
         self.markets = self.exchange.load_markets()  # Load all market pairs
+        self.valid_symbols = list(self.markets.keys())  # e.g., ['XXBTZUSD', 'XADAUSDT']
         self.data = {}
         self.closes = {}
         self.peaks = {}
@@ -48,12 +49,6 @@ class WaveGrok:
         self.alpha = 0.1
         self.gamma = 0.9
         self.cache_file = "wavegrok_cache.pkl"
-
-    def _get_kraken_symbol(self, symbol):
-        """Convert user-friendly symbol (e.g., BTC/USD) to Kraken format (e.g., XXBTZUSD)."""
-        base, quote = symbol.split('/')
-        kraken_pairs = {v['id']: k for k, v in self.markets.items() if v['quote'] == quote and v['base'] == base}
-        return kraken_pairs.get(f"{base}{quote}", symbol.replace('/', ''))  # Fallback to normalized if not found
 
     def _init_rf_model(self):
         X = np.array([
@@ -80,7 +75,7 @@ class WaveGrok:
             if os.path.exists(self.cache_file):
                 with open(self.cache_file, 'rb') as f:
                     cache = pickle.load(f)
-                    key = f"{symbol.replace('/', '')}_{timeframe}"  # Use normalized symbol for cache
+                    key = f"{symbol}_{timeframe}"
                     if key in cache and (time.time() - cache[key]['timestamp']) < 300:
                         return cache[key]['data']
         except Exception as e:
@@ -93,7 +88,7 @@ class WaveGrok:
             if os.path.exists(self.cache_file):
                 with open(self.cache_file, 'rb') as f:
                     cache = pickle.load(f)
-            key = f"{symbol.replace('/', '')}_{timeframe}"  # Use normalized symbol for cache
+            key = f"{symbol}_{timeframe}"
             cache[key] = {'data': data, 'timestamp': time.time()}
             with open(self.cache_file, 'wb') as f:
                 pickle.dump(cache, f)
@@ -102,10 +97,10 @@ class WaveGrok:
 
     def fetch_data(self, symbol, timeframe, limit):
         logging.debug(f"Fetching data for {symbol}, {timeframe}, limit {limit}")
-        kraken_symbol = self._get_kraken_symbol(symbol)  # Convert to Kraken format
-        if kraken_symbol not in self.markets:
-            return f"Invalid ticker '{symbol}' for {self.exchange.name}. Try 'BTC/USD' or check supported pairs."
-        
+        if symbol not in self.valid_symbols:
+            logging.error(f"Invalid symbol: {symbol}")
+            return f"Invalid ticker '{symbol}'. Use a valid Kraken pair like 'XXBTZUSD' or 'XADAUSDT'. See /symbols for options."
+
         cached_data = self._load_cache(symbol, timeframe)
         if cached_data is not None:
             self.data[timeframe] = cached_data
@@ -114,9 +109,9 @@ class WaveGrok:
 
         for attempt in range(3):
             try:
-                timeframe_map = {'1m': 1, '5m': 5, '15m': 15, '30m': 30, '1h': 60, '4h': 240, '1d': 1440}
-                kraken_interval = timeframe_map.get(timeframe.lower(), 60)
-                ohlcv = self.exchange.fetch_ohlcv(kraken_symbol, timeframe=kraken_interval, limit=limit)
+                timeframe_map = {'1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1h', '4h': '4h', '1d': '1d'}
+                ccxt_timeframe = timeframe_map.get(timeframe.lower(), '1h')
+                ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=ccxt_timeframe, limit=limit)
                 df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                 df.set_index('timestamp', inplace=True)
@@ -186,7 +181,7 @@ class WaveGrok:
                 return f"Network error fetching data: {str(e)}"
             except ccxt.ExchangeError as e:
                 logging.error(f"Exchange error for {symbol}: {str(e)}")
-                return f"Exchange error: {str(e)}. Ensure symbol is like 'BTC/USD'."
+                return f"Exchange error: {str(e)}. Check symbol against /symbols."
             except Exception as e:
                 logging.error(f"Unexpected error for {symbol}: {str(e)}\n{traceback.format_exc()}")
                 return f"Error fetching data: {str(e)}"
@@ -377,7 +372,8 @@ class WaveGrok:
 
     def analyze_waves(self, symbol, primary_tf, secondary_tf):
         logging.debug(f"Analyzing waves for {symbol}, {primary_tf}, {secondary_tf}")
-        kraken_symbol = self._get_kraken_symbol(symbol)  # Convert to Kraken format
+        if symbol not in self.valid_symbols:
+            return f"Invalid symbol '{symbol}'. Use a valid Kraken pair like 'XXBTZUSD' or 'XADAUSDT'."
         if primary_tf not in self.data:
             return f"No data for {primary_tf}—fetch some first!"
         df = self.data[primary_tf]
@@ -422,11 +418,11 @@ class WaveGrok:
 
         state = (current_wave, direction, df['rsi'].iloc[-1] > 70, df['macd'].iloc[-1] > df['macd_signal'].iloc[-1],
                  "Above" if closes[-1] > df['bb_upper'].iloc[-1] else "Below" if closes[-1] < df['bb_lower'].iloc[-1] else "Within",
-                 *self.get_meme_hype(kraken_symbol), df['adx'].iloc[-1] > 25)
+                 *self.get_meme_hype(symbol), df['adx'].iloc[-1] > 25)
         action = self.get_q_action(state)
         mtf_confirmed = secondary_tf in self.peaks and len(self.peaks[secondary_tf]) >= 2
         confidence = 0.9 if mtf_confirmed else 0.7
-        trade_msg, reward = self.auto_trade(kraken_symbol, action, closes[-1], confidence)
+        trade_msg, reward = self.auto_trade(symbol, action, closes[-1], confidence)
         self.update_q_table(state, action, reward, state)
         self.epsilon = max(0.1, self.epsilon * 0.995)
 
@@ -548,20 +544,22 @@ def get_chart(timeframe):
 def get_price(symbol):
     try:
         logging.debug(f"Fetching price for {symbol}")
-        kraken_symbol = agent._get_kraken_symbol(symbol)  # Convert to Kraken format
-        ticker = agent.exchange.fetch_ticker(kraken_symbol)
+        if symbol not in agent.valid_symbols:
+            logging.error(f"Invalid symbol for price fetch: {symbol}")
+            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like 'XXBTZUSD'."}), 400
+        ticker = agent.exchange.fetch_ticker(symbol)
         price = ticker.get('last', None)
         if price is None:
-            logging.warning(f"No 'last' price in ticker for {kraken_symbol}: {ticker}")
-            return jsonify({"error": "No price data"}), 500
-        logging.info(f"Fetched price for {symbol} ({kraken_symbol}): ${price:.2f}")
+            logging.warning(f"No 'last' price in ticker for {symbol}: {ticker}")
+            return jsonify({"error": "No price data available"}), 404
+        logging.info(f"Fetched price for {symbol}: ${price:.2f}")
         return jsonify({"price": price})
     except ccxt.NetworkError as e:
         logging.error(f"Network error fetching price for {symbol}: {str(e)}")
-        return jsonify({"error": "Network issue"}), 503
+        return jsonify({"error": "Network issue - try again later"}), 503
     except ccxt.ExchangeError as e:
         logging.error(f"Exchange error fetching price for {symbol}: {str(e)}")
-        return jsonify({"error": f"Invalid symbol {symbol} - try 'BTC/USD'"}), 400
+        return jsonify({"error": f"Exchange error: {str(e)}"}), 400
     except Exception as e:
         logging.error(f"Unexpected error fetching price for {symbol}: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": "Price unavailable"}), 500
@@ -580,10 +578,27 @@ def get_symbols():
 def get_sentiment(symbol):
     try:
         logging.debug(f"Fetching sentiment for {symbol}")
-        kraken_symbol = agent._get_kraken_symbol(symbol)  # Convert to Kraken format
-        sentiment_score = random.uniform(-1, 1)  # Simulated—real X analysis internally
+        if symbol not in agent.valid_symbols:
+            logging.error(f"Invalid symbol for sentiment: {symbol}")
+            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like 'XXBTZUSD'."}), 400
+
+        base = agent.markets[symbol]['base']
+        if base.startswith('X'):
+            base = base[1:]
+        search_term = f"${base}"
+
+        posts = []  # Placeholder for X search
+        sentiment_score = 0
+        if posts:
+            positive = sum(1 for p in posts if "bull" in p.lower() or "up" in p.lower())
+            negative = sum(1 for p in posts if "bear" in p.lower() or "down" in p.lower())
+            total = positive + negative
+            sentiment_score = (positive - negative) / total if total > 0 else 0
+        else:
+            sentiment_score = random.uniform(-1, 1)
+
         sentiment = "Bullish" if sentiment_score > 0.2 else "Bearish" if sentiment_score < -0.2 else "Neutral"
-        logging.info(f"Sentiment for {symbol} ({kraken_symbol}): {sentiment} (score: {sentiment_score:.2f})")
+        logging.info(f"Sentiment for {symbol}: {sentiment} (score: {sentiment_score:.2f})")
         return jsonify({"sentiment": sentiment, "score": sentiment_score})
     except Exception as e:
         logging.error(f"Error fetching sentiment for {symbol}: {str(e)}\n{traceback.format_exc()}")
