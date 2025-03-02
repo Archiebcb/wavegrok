@@ -1,168 +1,269 @@
-<script>
-    let symbols = [];
-    fetch('/symbols')
-        .then(response => response.json())
-        .then(data => symbols = data.symbols || [])
-        .catch(error => console.error('Error fetching symbols:', error));
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wave Grok</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .dark-theme { background-color: #1a1a2e; color: #e0e0e0; }
+        .light-theme { background-color: #f0f4f8; color: #333; }
+        .chart-container { max-width: 100%; overflow-x: auto; }
+        img { max-width: 100%; height: auto; border-radius: 8px; }
+        .legend { display: flex; flex-wrap: wrap; gap: 1rem; }
+        .legend-item { display: flex; align-items: center; }
+        .legend-color { width: 1rem; height: 1rem; margin-right: 0.5rem; }
+        .dark-theme .bg-gray-800 { background-color: #2d3748; }
+        .light-theme .bg-gray-800 { background-color: #ffffff; }
+        .dark-theme .text-gray-300 { color: #d1d5db; }
+        .light-theme .text-gray-300 { color: #4a5568; }
+        #suggestions { position: absolute; z-index: 10; max-height: 200px; overflow-y: auto; }
+    </style>
+</head>
+<body class="dark-theme min-h-screen flex flex-col items-center p-4 transition-colors duration-300">
+    <div class="w-full max-w-4xl flex justify-between items-center mb-6">
+        <h1 class="text-4xl font-bold text-indigo-400">Wave Grok</h1>
+        <button id="themeToggle" class="bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded transition">Switch to Light Mode</button>
+    </div>
 
-    const themeToggle = document.getElementById('themeToggle');
-    const body = document.body;
+    <div class="w-full max-w-md bg-gray-800 p-6 rounded-lg shadow-lg mb-6">
+        <form id="fetchForm" class="space-y-4">
+            <div class="relative">
+                <label for="symbol" class="block text-sm font-medium">Symbol</label>
+                <input type="text" id="symbol" name="symbol" placeholder="e.g., XXBTZUSD, XXRPZUSD" 
+                       class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white" required>
+                <div id="suggestions" class="hidden w-full bg-gray-700 border border-gray-600 rounded mt-1"></div>
+            </div>
+            <div>
+                <label for="timeframe" class="block text-sm font-medium">Timeframe</label>
+                <select id="timeframe" name="timeframe" 
+                        class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white">
+                    <option value="1m">1 Minute</option>
+                    <option value="5m">5 Minutes</option>
+                    <option value="15m">15 Minutes</option>
+                    <option value="30m">30 Minutes</option>
+                    <option value="1h">1 Hour</option>
+                    <option value="4h" selected>4 Hours</option>
+                    <option value="1d">1 Day</option>
+                </select>
+            </div>
+            <div>
+                <label for="limit" class="block text-sm font-medium">Limit</label>
+                <input type="number" id="limit" name="limit" placeholder="e.g., 500" 
+                       class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white" required>
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="peaks" checked class="mr-2"> Peaks</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="troughs" checked class="mr-2"> Troughs</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="sma_20" checked class="mr-2"> SMA 20</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="sma_50" checked class="mr-2"> SMA 50</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="ema_9" checked class="mr-2"> EMA 9</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="rsi" checked class="mr-2"> RSI</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="macd" checked class="mr-2"> MACD</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="bb" checked class="mr-2"> Bollinger Bands</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="fib" checked class="mr-2"> Fibonacci</label>
+                <label class="flex items-center"><input type="checkbox" name="indicators" value="ichimoku" checked class="mr-2"> Ichimoku Cloud</label>
+            </div>
+            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded transition">Fetch & Analyze</button>
+        </form>
+        <div id="message" class="mt-4 text-sm text-gray-300"></div>
+        <div id="price" class="mt-2 text-lg font-semibold text-indigo-400">Current Price: <span id="priceValue">Loading...</span></div>
+        <div id="sentiment" class="mt-2 text-lg font-semibold text-indigo-400">Market Sentiment: <span id="sentimentValue">Loading...</span></div>
+    </div>
 
-    themeToggle.addEventListener('click', () => {
-        if (body.classList.contains('dark-theme')) {
+    <div class="w-full max-w-4xl">
+        <div class="chart-container mb-6">
+            <img id="chart" alt="Chart" class="rounded shadow-lg">
+        </div>
+        <button id="download" class="mb-6 bg-indigo-600 hover:bg-indigo-700 text-white p-2 rounded">Download Chart</button>
+        <div class="legend mb-6">
+            <div class="legend-item"><span class="legend-color" style="background-color: lime;"></span> Peaks</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: magenta;"></span> Troughs</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: cyan;"></span> SMA 20</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: yellow;"></span> SMA 50</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: green;"></span> EMA 9</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: purple;"></span> RSI</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: blue;"></span> MACD</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: orange;"></span> MACD Signal</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: orange;"></span> Bollinger Bands</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: pink;"></span> Fibonacci Levels</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: red;"></span> Ichimoku A</div>
+            <div class="legend-item"><span class="legend-color" style="background-color: green;"></span> Ichimoku B</div>
+        </div>
+        <div id="analysis" class="bg-gray-800 p-6 rounded-lg shadow-lg text-sm text-gray-300 whitespace-pre-wrap"></div>
+    </div>
+
+    <div id="loading" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center">
+        <div class="animate-spin h-10 w-10 border-4 border-indigo-500 border-t-transparent rounded-full"></div>
+    </div>
+
+    <script>
+        let symbols = [];
+        fetch('/symbols')
+            .then(response => response.json())
+            .then(data => symbols = data.symbols || [])
+            .catch(error => console.error('Error fetching symbols:', error));
+
+        const themeToggle = document.getElementById('themeToggle');
+        const body = document.body;
+
+        themeToggle.addEventListener('click', () => {
+            if (body.classList.contains('dark-theme')) {
+                body.classList.remove('dark-theme');
+                body.classList.add('light-theme');
+                themeToggle.textContent = 'Switch to Dark Mode';
+                localStorage.setItem('theme', 'light');
+            } else {
+                body.classList.remove('light-theme');
+                body.classList.add('dark-theme');
+                themeToggle.textContent = 'Switch to Light Mode';
+                localStorage.setItem('theme', 'dark');
+            }
+        });
+
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'light') {
             body.classList.remove('dark-theme');
             body.classList.add('light-theme');
             themeToggle.textContent = 'Switch to Dark Mode';
-            localStorage.setItem('theme', 'light');
-        } else {
-            body.classList.remove('light-theme');
-            body.classList.add('dark-theme');
-            themeToggle.textContent = 'Switch to Light Mode';
-            localStorage.setItem('theme', 'dark');
         }
-    });
 
-    const savedTheme = localStorage.getItem('theme');
-    if (savedTheme === 'light') {
-        body.classList.remove('dark-theme');
-        body.classList.add('light-theme');
-        themeToggle.textContent = 'Switch to Dark Mode';
-    }
-
-    document.getElementById('fetchForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const formData = new FormData(e.target);
-        const data = Object.fromEntries(formData);
-        data.indicators = formData.getAll('indicators');
-        const messageDiv = document.getElementById('message');
-        const analysisDiv = document.getElementById('analysis');
-        const sentimentDiv = document.getElementById('sentimentValue');
-        const loadingDiv = document.getElementById('loading');
-        messageDiv.textContent = 'Fetching data...';
-        loadingDiv.classList.remove('hidden');
-
-        try {
-            const fetchResponse = await fetch('/fetch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            const fetchResult = await fetchResponse.json();
-            messageDiv.textContent = fetchResult.message;
-
-            if (fetchResult.message.includes('Fetched') || fetchResult.message.includes('Loaded')) {
-                const chartImg = document.getElementById('chart');
-                chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
-
-                const analyzeResponse = await fetch('/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ symbol: data.symbol, primary_tf: data.timeframe, secondary_tf: data.timeframe })
-                });
-                const analyzeResult = await analyzeResponse.json();
-                analysisDiv.textContent = analyzeResult.message;
-
-                const sentimentResponse = await fetch(`/sentiment/${data.symbol}`);
-                const sentimentResult = await sentimentResponse.json();
-                sentimentDiv.textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
-            }
-        } catch (error) {
-            messageDiv.textContent = 'Error: ' + error.message;
-            analysisDiv.textContent = '';
-            sentimentDiv.textContent = 'N/A';
-        } finally {
-            loadingDiv.classList.add('hidden');
-        }
-    });
-
-    document.querySelectorAll('input[name="indicators"]').forEach(checkbox => {
-        checkbox.addEventListener('change', async () => {
-            const formData = new FormData(document.getElementById('fetchForm'));
+        document.getElementById('fetchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
             const data = Object.fromEntries(formData);
             data.indicators = formData.getAll('indicators');
-            const chartImg = document.getElementById('chart');
-            chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
-        });
-    });
+            const messageDiv = document.getElementById('message');
+            const analysisDiv = document.getElementById('analysis');
+            const sentimentDiv = document.getElementById('sentimentValue');
+            const loadingDiv = document.getElementById('loading');
+            messageDiv.textContent = 'Fetching data...';
+            loadingDiv.classList.remove('hidden');
 
-    setInterval(async () => {
-        let symbol = document.getElementById('symbol').value.replace('/', ''); // Remove slashes
-        if (symbol) {
-            let attempts = 0;
-            const maxAttempts = 3;
-            while (attempts < maxAttempts) {
-                try {
-                    const priceResponse = await fetch(`/price/${symbol}`);
-                    if (!priceResponse.ok) throw new Error(`HTTP error! status: ${priceResponse.status}`);
-                    const priceResult = await priceResponse.json();
-                    document.getElementById('priceValue').textContent = priceResult.price ? `$${priceResult.price.toFixed(2)}` : 'N/A';
+            try {
+                const fetchResponse = await fetch('/fetch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const fetchResult = await fetchResponse.json();
+                messageDiv.textContent = fetchResult.message;
 
-                    const sentimentResponse = await fetch(`/sentiment/${symbol}`);
-                    if (!sentimentResponse.ok) throw new Error(`HTTP error! status: ${sentimentResponse.status}`);
+                if (fetchResult.message.includes('Fetched') || fetchResult.message.includes('Loaded')) {
+                    const chartImg = document.getElementById('chart');
+                    chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
+
+                    const analyzeResponse = await fetch('/analyze', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ symbol: data.symbol, primary_tf: data.timeframe, secondary_tf: data.timeframe })
+                    });
+                    const analyzeResult = await analyzeResponse.json();
+                    analysisDiv.textContent = analyzeResult.message;
+
+                    const sentimentResponse = await fetch(`/sentiment/${data.symbol}`);
                     const sentimentResult = await sentimentResponse.json();
-                    document.getElementById('sentimentValue').textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
-                    break;
-                } catch (error) {
-                    attempts++;
-                    console.error(`Attempt ${attempts} failed: ${error.message}`);
-                    if (attempts === maxAttempts) {
-                        document.getElementById('priceValue').textContent = 'N/A';
-                        document.getElementById('sentimentValue').textContent = 'N/A';
-                    } else {
-                        await new Promise(resolve => setTimeout(resolve, 2000));
+                    sentimentDiv.textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
+                }
+            } catch (error) {
+                messageDiv.textContent = 'Error: ' + error.message;
+                analysisDiv.textContent = '';
+                sentimentDiv.textContent = 'N/A';
+            } finally {
+                loadingDiv.classList.add('hidden');
+            }
+        });
+
+        document.querySelectorAll('input[name="indicators"]').forEach(checkbox => {
+            checkbox.addEventListener('change', async () => {
+                const formData = new FormData(document.getElementById('fetchForm'));
+                const data = Object.fromEntries(formData);
+                data.indicators = formData.getAll('indicators');
+                const chartImg = document.getElementById('chart');
+                chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
+            });
+        });
+
+        setInterval(async () => {
+            const symbol = document.getElementById('symbol').value;
+            if (symbol) {
+                let attempts = 0;
+                const maxAttempts = 3;
+                while (attempts < maxAttempts) {
+                    try {
+                        const priceResponse = await fetch(`/price/${symbol}`);
+                        if (!priceResponse.ok) throw new Error(`HTTP error! status: ${priceResponse.status}`);
+                        const priceResult = await priceResponse.json();
+                        document.getElementById('priceValue').textContent = priceResult.price ? `$${priceResult.price.toFixed(2)}` : 'N/A';
+
+                        const sentimentResponse = await fetch(`/sentiment/${symbol}`);
+                        if (!sentimentResponse.ok) throw new Error(`HTTP error! status: ${sentimentResponse.status}`);
+                        const sentimentResult = await sentimentResponse.json();
+                        document.getElementById('sentimentValue').textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
+                        break;
+                    } catch (error) {
+                        attempts++;
+                        console.error(`Attempt ${attempts} failed: ${error.message}`);
+                        if (attempts === maxAttempts) {
+                            document.getElementById('priceValue').textContent = 'N/A';
+                            document.getElementById('sentimentValue').textContent = 'N/A';
+                        } else {
+                            await new Promise(resolve => setTimeout(resolve, 2000));
+                        }
                     }
                 }
             }
-        }
-    }, 10000);
+        }, 10000);
 
-    setInterval(async () => {
-        const formData = new FormData(document.getElementById('fetchForm'));
-        const data = Object.fromEntries(formData);
-        data.indicators = formData.getAll('indicators');
-        if (data.symbol && data.timeframe && data.limit) {
-            await fetch('/fetch', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
-            const chartImg = document.getElementById('chart');
-            chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
-        }
-    }, 60000);
+        setInterval(async () => {
+            const formData = new FormData(document.getElementById('fetchForm'));
+            const data = Object.fromEntries(formData);
+            data.indicators = formData.getAll('indicators');
+            if (data.symbol && data.timeframe && data.limit) {
+                await fetch('/fetch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                const chartImg = document.getElementById('chart');
+                chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
+            }
+        }, 60000);
 
-    const symbolInput = document.getElementById('symbol');
-    const suggestionsDiv = document.getElementById('suggestions');
-    symbolInput.addEventListener('input', () => {
-        let query = symbolInput.value.toUpperCase().replace('/', ''); // Remove slashes from input
-        if (query.length < 2) {
-            suggestionsDiv.classList.add('hidden');
-            return;
-        }
-        const matches = symbols.filter(s => s.toUpperCase().includes(query)).slice(0, 10);
-        if (matches.length === 0) {
-            suggestionsDiv.classList.add('hidden');
-            return;
-        }
-        suggestionsDiv.innerHTML = matches.map(s => `<div class="p-2 hover:bg-gray-600 cursor-pointer">${s}</div>`).join('');
-        suggestionsDiv.classList.remove('hidden');
-        suggestionsDiv.querySelectorAll('div').forEach(item => {
-            item.addEventListener('click', () => {
-                symbolInput.value = item.textContent;
+        const symbolInput = document.getElementById('symbol');
+        const suggestionsDiv = document.getElementById('suggestions');
+        symbolInput.addEventListener('input', () => {
+            const query = symbolInput.value.toUpperCase();
+            if (query.length < 2) {
                 suggestionsDiv.classList.add('hidden');
+                return;
+            }
+            const matches = symbols.filter(s => s.toUpperCase().includes(query)).slice(0, 10);
+            if (matches.length === 0) {
+                suggestionsDiv.classList.add('hidden');
+                return;
+            }
+            suggestionsDiv.innerHTML = matches.map(s => `<div class="p-2 hover:bg-gray-600 cursor-pointer">${s}</div>`).join('');
+            suggestionsDiv.classList.remove('hidden');
+            suggestionsDiv.querySelectorAll('div').forEach(item => {
+                item.addEventListener('click', () => {
+                    symbolInput.value = item.textContent;
+                    suggestionsDiv.classList.add('hidden');
+                });
             });
         });
-    });
-    symbolInput.addEventListener('focus', () => {
-        if (symbolInput.value.length >= 2) suggestionsDiv.classList.remove('hidden');
-    });
-    symbolInput.addEventListener('blur', () => setTimeout(() => suggestionsDiv.classList.add('hidden'), 200));
+        symbolInput.addEventListener('focus', () => {
+            if (symbolInput.value.length >= 2) suggestionsDiv.classList.remove('hidden');
+        });
+        symbolInput.addEventListener('blur', () => setTimeout(() => suggestionsDiv.classList.add('hidden'), 200));
 
-    document.getElementById('download').addEventListener('click', () => {
-        const chartImg = document.getElementById('chart');
-        const link = document.createElement('a');
-        link.href = chartImg.src;
-        link.download = `wavegrok_chart_${new Date().toISOString()}.png`;
-        link.click();
-    });
-</script>
+        document.getElementById('download').addEventListener('click', () => {
+            const chartImg = document.getElementById('chart');
+            const link = document.createElement('a');
+            link.href = chartImg.src;
+            link.download = `wavegrok_chart_${new Date().toISOString()}.png`;
+            link.click();
+        });
+    </script>
+</body>
+</html>
