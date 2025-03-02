@@ -52,9 +52,18 @@ class WaveGrok:
         self.alpha = 0.1
         self.gamma = 0.9
         self.cache_file = "wavegrok_cache.pkl"
-        self.price_cache = {}  # Price caching
+        self.price_cache = {}
         self.cache_lock = Lock()
         self.last_cache_time = {}
+
+    def _normalize_symbol(self, symbol):
+        """Normalize symbol to Kraken format (e.g., BTC/USDT -> XBT/USD)."""
+        symbol = symbol.upper()
+        if symbol == "BTC/USDT" or symbol == "BTCUSD":
+            return "XBT/USD"
+        if symbol == "XBTUSDT":
+            return "XBT/USD"
+        return symbol  # Assume it’s already in Kraken format if not matched
 
     def _init_rf_model(self):
         X = np.array([
@@ -103,19 +112,20 @@ class WaveGrok:
 
     def fetch_data(self, symbol, timeframe, limit):
         logging.debug(f"Fetching data for {symbol}, {timeframe}, limit {limit}")
-        if symbol not in self.valid_symbols:
-            logging.error(f"Invalid symbol: {symbol}")
+        normalized_symbol = self._normalize_symbol(symbol)
+        if normalized_symbol not in self.valid_symbols:
+            logging.error(f"Invalid symbol: {normalized_symbol}")
             return f"Invalid ticker '{symbol}'. Use a valid Kraken pair from /symbols."
-        cached_data = self._load_cache(symbol, timeframe)
+        cached_data = self._load_cache(normalized_symbol, timeframe)
         if cached_data is not None:
             self.data[timeframe] = cached_data
             self.closes[timeframe] = cached_data['close'].values
-            return f"Loaded {limit} {timeframe} candles for {symbol} from cache."
+            return f"Loaded {limit} {timeframe} candles for {normalized_symbol} from cache."
         for attempt in range(3):
             try:
                 timeframe_map = {'1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1h', '4h': '4h', '1d': '1d'}
                 ccxt_timeframe = timeframe_map.get(timeframe.lower(), '1h')
-                ohlcv = self.exchange.fetch_ohlcv(symbol, timeframe=ccxt_timeframe, limit=limit)
+                ohlcv = self.exchange.fetch_ohlcv(normalized_symbol, timeframe=ccxt_timeframe, limit=limit)
                 df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                 df.set_index('timestamp', inplace=True)
@@ -169,22 +179,22 @@ class WaveGrok:
                 df['moon_phase'] = self._get_moon_phase(df.index[-1])
                 df.dropna(how='all', inplace=True)
                 if df.empty:
-                    return f"No valid data for {symbol} on {timeframe} after cleaning."
+                    return f"No valid data for {normalized_symbol} on {timeframe} after cleaning."
                 self.data[timeframe] = df
                 self.closes[timeframe] = df['close'].values
-                self._save_cache(symbol, timeframe, df)
-                return f"Fetched {limit} {timeframe} candles for {symbol}."
+                self._save_cache(normalized_symbol, timeframe, df)
+                return f"Fetched {limit} {timeframe} candles for {normalized_symbol}."
             except ccxt.NetworkError as e:
-                logging.error(f"Network error on attempt {attempt + 1} for {symbol}: {str(e)}")
+                logging.error(f"Network error on attempt {attempt + 1} for {normalized_symbol}: {str(e)}")
                 if attempt < 2:
                     time.sleep(2)
                     continue
                 return f"Network error fetching data: {str(e)}"
             except ccxt.ExchangeError as e:
-                logging.error(f"Exchange error for {symbol}: {str(e)}")
+                logging.error(f"Exchange error for {normalized_symbol}: {str(e)}")
                 return f"Exchange error: {str(e)}. Check symbol against /symbols."
             except Exception as e:
-                logging.error(f"Unexpected error for {symbol}: {str(e)}\n{traceback.format_exc()}")
+                logging.error(f"Unexpected error for {normalized_symbol}: {str(e)}\n{traceback.format_exc()}")
                 return f"Error fetching data: {str(e)}"
 
     def _calculate_fractal(self, closes):
@@ -301,7 +311,7 @@ class WaveGrok:
             ylabel='Price',
             volume=True,
             addplot=apdict,
-            figscale=1.5,  # Smaller charts for speed
+            figscale=1.5,
             figsize=(12, 9),
             savefig=dict(fname=buf, format='png', bbox_inches='tight', dpi=100)
         )
@@ -366,7 +376,8 @@ class WaveGrok:
 
     def analyze_waves(self, symbol, primary_tf, secondary_tf):
         logging.debug(f"Analyzing waves for {symbol}, {primary_tf}, {secondary_tf}")
-        if symbol not in self.valid_symbols:
+        normalized_symbol = self._normalize_symbol(symbol)
+        if normalized_symbol not in self.valid_symbols:
             return f"Invalid symbol '{symbol}'. Use a valid Kraken pair like '{self.valid_symbols[0]}'."
         if primary_tf not in self.data:
             return f"No data for {primary_tf}—fetch some first!"
@@ -406,18 +417,18 @@ class WaveGrok:
                     "Bearish Crossover" if df['sma_50'].iloc[-1] < df['sma_200'].iloc[-1] and df['sma_50'].iloc[-2] >= df['sma_200'].iloc[-2] else "No Crossover"
         state = (current_wave, direction, df['rsi'].iloc[-1] > 70, df['macd'].iloc[-1] > df['macd_signal'].iloc[-1],
                  "Above" if closes[-1] > df['bb_upper'].iloc[-1] else "Below" if closes[-1] < df['bb_lower'].iloc[-1] else "Within",
-                 *self.get_meme_hype(symbol), df['adx'].iloc[-1] > 25)
+                 *self.get_meme_hype(normalized_symbol), df['adx'].iloc[-1] > 25)
         action = self.get_q_action(state)
         mtf_confirmed = secondary_tf in self.peaks and len(self.peaks[secondary_tf]) >= 2
         confidence = 0.9 if mtf_confirmed else 0.7
-        trade_msg, reward = self.auto_trade(symbol, action, closes[-1], confidence)
+        trade_msg, reward = self.auto_trade(normalized_symbol, action, closes[-1], confidence)
         self.update_q_table(state, action, reward, state)
         self.epsilon = max(0.1, self.epsilon * 0.995)
         rsi_value = df['rsi'].iloc[-1]
         rsi_signal = "Overbought (Sell)" if rsi_value > 70 else "Oversold (Buy)" if rsi_value < 30 else "Neutral"
         atr_value = df['atr'].iloc[-1]
         report = (
-            f"WaveGrok Analysis for {symbol} ({primary_tf})\n"
+            f"WaveGrok Analysis for {normalized_symbol} ({primary_tf})\n"
             f"Current Wave: {current_wave}\n"
             f"Direction: {direction}\n"
             f"Recommended Action: {action}\n"
@@ -530,24 +541,25 @@ def get_chart(timeframe):
 @app.route('/price/<symbol>')
 def get_price(symbol):
     try:
-        logging.debug(f"Fetching price for {symbol}")
+        logging.info(f"Received request for /price/{symbol}")
+        normalized_symbol = agent._normalize_symbol(symbol)
         with agent.cache_lock:
-            if symbol in agent.price_cache and (time.time() - agent.last_cache_time.get(symbol, 0)) < 10:  # 10s cache
-                logging.debug(f"Returning cached price for {symbol}")
-                return jsonify({"price": agent.price_cache[symbol]})
-        if symbol not in agent.valid_symbols:
+            if normalized_symbol in agent.price_cache and (time.time() - agent.last_cache_time.get(normalized_symbol, 0)) < 10:
+                logging.debug(f"Returning cached price for {normalized_symbol}")
+                return jsonify({"price": agent.price_cache[normalized_symbol]})
+        if normalized_symbol not in agent.valid_symbols:
             example_symbol = agent.valid_symbols[0] if agent.valid_symbols else 'XBT/USD'
-            logging.error(f"Invalid symbol: {symbol}")
-            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like '{example_symbol}'."}), 400
-        ticker = agent.exchange.fetch_ticker(symbol)
+            logging.error(f"Invalid symbol: {normalized_symbol}. Valid symbols: {agent.valid_symbols[:5]}...")
+            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a valid Kraken pair like '{example_symbol}'."}), 400
+        ticker = agent.exchange.fetch_ticker(normalized_symbol)
         price = ticker.get('last', None)
         if price is None:
-            logging.warning(f"No 'last' price in ticker for {symbol}: {ticker}")
+            logging.warning(f"No 'last' price in ticker for {normalized_symbol}: {ticker}")
             return jsonify({"error": "No price data available"}), 404
         with agent.cache_lock:
-            agent.price_cache[symbol] = price
-            agent.last_cache_time[symbol] = time.time()
-        logging.info(f"Fetched price for {symbol}: ${price:.2f}")
+            agent.price_cache[normalized_symbol] = price
+            agent.last_cache_time[normalized_symbol] = time.time()
+        logging.info(f"Fetched price for {normalized_symbol}: ${price:.2f}")
         return jsonify({"price": price})
     except ccxt.NetworkError as e:
         logging.error(f"Network error fetching price for {symbol}: {str(e)}")
@@ -562,6 +574,7 @@ def get_price(symbol):
 @app.route('/symbols')
 def get_symbols():
     try:
+        logging.info("Received request for /symbols")
         symbols = list(agent.markets.keys())
         logging.debug(f"Returning {len(symbols)} symbols")
         return jsonify({"symbols": symbols})
@@ -572,19 +585,20 @@ def get_symbols():
 @app.route('/sentiment/<symbol>')
 def get_sentiment(symbol):
     try:
-        logging.debug(f"Fetching sentiment for {symbol}")
-        if symbol not in agent.valid_symbols:
+        logging.info(f"Received request for /sentiment/{symbol}")
+        normalized_symbol = agent._normalize_symbol(symbol)
+        if normalized_symbol not in agent.valid_symbols:
             example_symbol = agent.valid_symbols[0] if agent.valid_symbols else 'XBT/USD'
-            logging.error(f"Invalid symbol: {symbol}")
+            logging.error(f"Invalid symbol: {normalized_symbol}. Valid symbols: {agent.valid_symbols[:5]}...")
             return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like '{example_symbol}'."}), 400
-        base = agent.markets[symbol]['base']
+        base = agent.markets[normalized_symbol]['base']
         if base.startswith('X'):
             base = base[1:]
         search_term = f"${base}"
         posts = []  # Placeholder for future X integration
         sentiment_score = random.uniform(-1, 1)  # Temp random
         sentiment = "Bullish" if sentiment_score > 0.2 else "Bearish" if sentiment_score < -0.2 else "Neutral"
-        logging.info(f"Sentiment for {symbol}: {sentiment} (score: {sentiment_score:.2f})")
+        logging.info(f"Sentiment for {normalized_symbol}: {sentiment} (score: {sentiment_score:.2f})")
         return jsonify({"sentiment": sentiment, "score": sentiment_score})
     except Exception as e:
         logging.error(f"Error fetching sentiment for {symbol}: {str(e)}\n{traceback.format_exc()}")
@@ -592,4 +606,4 @@ def get_sentiment(symbol):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)  # Threaded for concurrency
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)
