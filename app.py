@@ -24,10 +24,11 @@ import logging
 import pickle
 import time
 import traceback
+from threading import Lock
 
 warnings.filterwarnings("ignore")
-logging.basicConfig(level=logging.INFO)  # Reduce to INFO to cut matplotlib debug noise
-logging.getLogger('matplotlib').setLevel(logging.WARNING)  # Silence matplotlib specifically
+logging.basicConfig(level=logging.INFO)
+logging.getLogger('matplotlib').setLevel(logging.WARNING)
 
 app = Flask(__name__)
 
@@ -51,6 +52,9 @@ class WaveGrok:
         self.alpha = 0.1
         self.gamma = 0.9
         self.cache_file = "wavegrok_cache.pkl"
+        self.price_cache = {}  # Price caching
+        self.cache_lock = Lock()
+        self.last_cache_time = {}
 
     def _init_rf_model(self):
         X = np.array([
@@ -297,9 +301,9 @@ class WaveGrok:
             ylabel='Price',
             volume=True,
             addplot=apdict,
-            figscale=2.0,
-            figsize=(16, 12),
-            savefig=dict(fname=buf, format='png', bbox_inches='tight', dpi=150)
+            figscale=1.5,  # Smaller charts for speed
+            figsize=(12, 9),
+            savefig=dict(fname=buf, format='png', bbox_inches='tight', dpi=100)
         )
         logging.info(f"Number of addplot items: {len(apdict)}")
         logging.info(f"Image buffer size after save: {buf.tell()} bytes")
@@ -527,17 +531,22 @@ def get_chart(timeframe):
 def get_price(symbol):
     try:
         logging.debug(f"Fetching price for {symbol}")
-        # Normalize symbol for consistency
-        normalized_symbol = symbol
-        if normalized_symbol not in agent.valid_symbols:
+        with agent.cache_lock:
+            if symbol in agent.price_cache and (time.time() - agent.last_cache_time.get(symbol, 0)) < 10:  # 10s cache
+                logging.debug(f"Returning cached price for {symbol}")
+                return jsonify({"price": agent.price_cache[symbol]})
+        if symbol not in agent.valid_symbols:
             example_symbol = agent.valid_symbols[0] if agent.valid_symbols else 'XBT/USD'
-            logging.error(f"Invalid symbol for price fetch: {symbol}")
-            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a valid Kraken pair like '{example_symbol}'."}), 400
-        ticker = agent.exchange.fetch_ticker(normalized_symbol)
+            logging.error(f"Invalid symbol: {symbol}")
+            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like '{example_symbol}'."}), 400
+        ticker = agent.exchange.fetch_ticker(symbol)
         price = ticker.get('last', None)
         if price is None:
             logging.warning(f"No 'last' price in ticker for {symbol}: {ticker}")
             return jsonify({"error": "No price data available"}), 404
+        with agent.cache_lock:
+            agent.price_cache[symbol] = price
+            agent.last_cache_time[symbol] = time.time()
         logging.info(f"Fetched price for {symbol}: ${price:.2f}")
         return jsonify({"price": price})
     except ccxt.NetworkError as e:
@@ -564,18 +573,16 @@ def get_symbols():
 def get_sentiment(symbol):
     try:
         logging.debug(f"Fetching sentiment for {symbol}")
-        # Normalize symbol for consistency
-        normalized_symbol = symbol
-        if normalized_symbol not in agent.valid_symbols:
+        if symbol not in agent.valid_symbols:
             example_symbol = agent.valid_symbols[0] if agent.valid_symbols else 'XBT/USD'
-            logging.error(f"Invalid symbol for sentiment: {symbol}")
-            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a valid Kraken pair like '{example_symbol}'."}), 400
-        base = agent.markets[normalized_symbol]['base']
+            logging.error(f"Invalid symbol: {symbol}")
+            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like '{example_symbol}'."}), 400
+        base = agent.markets[symbol]['base']
         if base.startswith('X'):
             base = base[1:]
         search_term = f"${base}"
-        posts = []  # Placeholder
-        sentiment_score = random.uniform(-1, 1)
+        posts = []  # Placeholder for future X integration
+        sentiment_score = random.uniform(-1, 1)  # Temp random
         sentiment = "Bullish" if sentiment_score > 0.2 else "Bearish" if sentiment_score < -0.2 else "Neutral"
         logging.info(f"Sentiment for {symbol}: {sentiment} (score: {sentiment_score:.2f})")
         return jsonify({"sentiment": sentiment, "score": sentiment_score})
@@ -585,4 +592,4 @@ def get_sentiment(symbol):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=False, threaded=True)  # Threaded for concurrency

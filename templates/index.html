@@ -30,7 +30,7 @@
         <form id="fetchForm" class="space-y-4">
             <div class="relative">
                 <label for="symbol" class="block text-sm font-medium">Symbol</label>
-                <input type="text" id="symbol" name="symbol" placeholder="e.g., XXBTZUSD, XXRPZUSD" 
+                <input type="text" id="symbol" name="symbol" placeholder="e.g., XBT/USD, ETH/USD" 
                        class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white" required>
                 <div id="suggestions" class="hidden w-full bg-gray-700 border border-gray-600 rounded mt-1"></div>
             </div>
@@ -49,7 +49,7 @@
             </div>
             <div>
                 <label for="limit" class="block text-sm font-medium">Limit</label>
-                <input type="number" id="limit" name="limit" placeholder="e.g., 500" 
+                <input type="number" id="limit" name="limit" value="500" 
                        class="w-full p-2 mt-1 bg-gray-700 border border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white" required>
             </div>
             <div class="grid grid-cols-2 gap-2">
@@ -146,6 +146,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
+                if (!fetchResponse.ok) throw new Error(`Fetch failed: ${fetchResponse.status}`);
                 const fetchResult = await fetchResponse.json();
                 messageDiv.textContent = fetchResult.message;
 
@@ -158,10 +159,12 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ symbol: data.symbol, primary_tf: data.timeframe, secondary_tf: data.timeframe })
                     });
+                    if (!analyzeResponse.ok) throw new Error(`Analyze failed: ${analyzeResponse.status}`);
                     const analyzeResult = await analyzeResponse.json();
                     analysisDiv.textContent = analyzeResult.message;
 
                     const sentimentResponse = await fetch(`/sentiment/${data.symbol}`);
+                    if (!sentimentResponse.ok) throw new Error(`Sentiment failed: ${sentimentResponse.status}`);
                     const sentimentResult = await sentimentResponse.json();
                     sentimentDiv.textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
                 }
@@ -184,51 +187,57 @@
             });
         });
 
-        setInterval(async () => {
+        // Optimized price/sentiment polling
+        async function updateLiveData() {
             const symbol = document.getElementById('symbol').value;
-            if (symbol) {
-                let attempts = 0;
-                const maxAttempts = 3;
-                while (attempts < maxAttempts) {
-                    try {
-                        const priceResponse = await fetch(`/price/${symbol}`);
-                        if (!priceResponse.ok) throw new Error(`HTTP error! status: ${priceResponse.status}`);
-                        const priceResult = await priceResponse.json();
-                        document.getElementById('priceValue').textContent = priceResult.price ? `$${priceResult.price.toFixed(2)}` : 'N/A';
-
-                        const sentimentResponse = await fetch(`/sentiment/${symbol}`);
-                        if (!sentimentResponse.ok) throw new Error(`HTTP error! status: ${sentimentResponse.status}`);
-                        const sentimentResult = await sentimentResponse.json();
-                        document.getElementById('sentimentValue').textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
-                        break;
-                    } catch (error) {
-                        attempts++;
-                        console.error(`Attempt ${attempts} failed: ${error.message}`);
-                        if (attempts === maxAttempts) {
-                            document.getElementById('priceValue').textContent = 'N/A';
-                            document.getElementById('sentimentValue').textContent = 'N/A';
-                        } else {
-                            await new Promise(resolve => setTimeout(resolve, 2000));
-                        }
-                    }
+            if (!symbol) return;
+            try {
+                const priceResponse = await fetch(`/price/${symbol}`);
+                if (priceResponse.ok) {
+                    const priceResult = await priceResponse.json();
+                    document.getElementById('priceValue').textContent = priceResult.price ? `$${priceResult.price.toFixed(2)}` : 'N/A';
+                } else {
+                    document.getElementById('priceValue').textContent = 'N/A';
                 }
-            }
-        }, 10000);
 
-        setInterval(async () => {
+                const sentimentResponse = await fetch(`/sentiment/${symbol}`);
+                if (sentimentResponse.ok) {
+                    const sentimentResult = await sentimentResponse.json();
+                    document.getElementById('sentimentValue').textContent = sentimentResult.sentiment ? `${sentimentResult.sentiment} (${sentimentResult.score.toFixed(2)})` : 'N/A';
+                } else {
+                    document.getElementById('sentimentValue').textContent = 'N/A';
+                }
+            } catch (error) {
+                console.error('Live data update failed:', error);
+                document.getElementById('priceValue').textContent = 'N/A';
+                document.getElementById('sentimentValue').textContent = 'N/A';
+            }
+        }
+        setInterval(updateLiveData, 15000);  // Poll every 15s, not 10s, to reduce load
+        updateLiveData();  // Initial call
+
+        // Chart refresh only on fetch success
+        async function refreshChart() {
             const formData = new FormData(document.getElementById('fetchForm'));
             const data = Object.fromEntries(formData);
             data.indicators = formData.getAll('indicators');
             if (data.symbol && data.timeframe && data.limit) {
-                await fetch('/fetch', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(data)
-                });
-                const chartImg = document.getElementById('chart');
-                chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
+                try {
+                    const response = await fetch('/fetch', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    if (response.ok) {
+                        const chartImg = document.getElementById('chart');
+                        chartImg.src = `/chart/${data.timeframe}?indicators=${data.indicators.join(',')}&t=${new Date().getTime()}`;
+                    }
+                } catch (error) {
+                    console.error('Chart refresh failed:', error);
+                }
             }
-        }, 60000);
+        }
+        setInterval(refreshChart, 120000);  // Refresh chart every 2min
 
         const symbolInput = document.getElementById('symbol');
         const suggestionsDiv = document.getElementById('suggestions');
@@ -249,6 +258,7 @@
                 item.addEventListener('click', () => {
                     symbolInput.value = item.textContent;
                     suggestionsDiv.classList.add('hidden');
+                    updateLiveData();  // Update immediately on selection
                 });
             });
         });
