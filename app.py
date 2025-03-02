@@ -26,7 +26,8 @@ import time
 import traceback
 
 warnings.filterwarnings("ignore")
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)  # Reduce to INFO to cut matplotlib debug noise
+logging.getLogger('matplotlib').setLevel(logging.WARNING)  # Silence matplotlib specifically
 
 app = Flask(__name__)
 
@@ -35,7 +36,7 @@ class WaveGrok:
         self.exchange = getattr(ccxt, exchange_name)({'enableRateLimit': True})
         self.markets = self.exchange.load_markets()
         self.valid_symbols = list(self.markets.keys())
-        logging.info(f"Loaded {len(self.valid_symbols)} valid symbols: {self.valid_symbols[:10]}...")
+        logging.info(f"Loaded {len(self.valid_symbols)} valid symbols: {self.valid_symbols}")
         self.data = {}
         self.closes = {}
         self.peaks = {}
@@ -526,11 +527,13 @@ def get_chart(timeframe):
 def get_price(symbol):
     try:
         logging.debug(f"Fetching price for {symbol}")
-        if symbol not in agent.valid_symbols:
-            example_symbol = agent.valid_symbols[0] if agent.valid_symbols else 'XXBTZUSD'
+        # Normalize symbol for consistency
+        normalized_symbol = symbol
+        if normalized_symbol not in agent.valid_symbols:
+            example_symbol = agent.valid_symbols[0] if agent.valid_symbols else 'XBT/USD'
             logging.error(f"Invalid symbol for price fetch: {symbol}")
-            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like '{example_symbol}'."}), 400
-        ticker = agent.exchange.fetch_ticker(symbol)
+            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a valid Kraken pair like '{example_symbol}'."}), 400
+        ticker = agent.exchange.fetch_ticker(normalized_symbol)
         price = ticker.get('last', None)
         if price is None:
             logging.warning(f"No 'last' price in ticker for {symbol}: {ticker}")
@@ -561,11 +564,13 @@ def get_symbols():
 def get_sentiment(symbol):
     try:
         logging.debug(f"Fetching sentiment for {symbol}")
-        if symbol not in agent.valid_symbols:
-            example_symbol = agent.valid_symbols[0] if agent.valid_symbols else 'XXBTZUSD'
+        # Normalize symbol for consistency
+        normalized_symbol = symbol
+        if normalized_symbol not in agent.valid_symbols:
+            example_symbol = agent.valid_symbols[0] if agent.valid_symbols else 'XBT/USD'
             logging.error(f"Invalid symbol for sentiment: {symbol}")
-            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like '{example_symbol}'."}), 400
-        base = agent.markets[symbol]['base']
+            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a valid Kraken pair like '{example_symbol}'."}), 400
+        base = agent.markets[normalized_symbol]['base']
         if base.startswith('X'):
             base = base[1:]
         search_term = f"${base}"
