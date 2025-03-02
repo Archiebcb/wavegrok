@@ -38,23 +38,47 @@ class WaveGrok:
         self.exchange = getattr(ccxt, exchange_name)({'enableRateLimit': True})
         self.markets = {}
         self.valid_symbols = []
-        for attempt in range(3):  # Retry up to 3 times
+        for attempt in range(3):
             try:
+                logging.info(f"Attempt {attempt + 1} to load markets from Kraken...")
                 self.markets = self.exchange.load_markets(reload=True)
                 self.valid_symbols = list(self.markets.keys())
-                logging.info(f"Loaded {len(self.valid_symbols)} valid symbols from Kraken: {self.valid_symbols}")
-                break  # Success, exit loop
+                logging.info(f"Loaded {len(self.valid_symbols)} symbols: {self.valid_symbols}")
+                # Ensure XBT/USD is complete
+                if 'XBT/USD' not in self.valid_symbols or 'id' not in self.markets.get('XBT/USD', {}):
+                    logging.warning("'XBT/USD' missing or incomplete—adding manually")
+                    self.valid_symbols.append('XBT/USD')
+                    self.markets['XBT/USD'] = {
+                        'id': 'XXBTZUSD',
+                        'symbol': 'XBT/USD',  # Added for ccxt compatibility
+                        'base': 'XBT',
+                        'quote': 'USD',
+                        'active': True
+                    }
+                break
             except Exception as e:
-                logging.error(f"Attempt {attempt + 1} failed to load markets: {str(e)}\n{traceback.format_exc()}")
+                logging.error(f"Attempt {attempt + 1} failed: {str(e)}\n{traceback.format_exc()}")
                 if attempt < 2:
-                    time.sleep(2)  # Wait before retrying
+                    time.sleep(2)
                 else:
-                    # Final failure, use fallback
+                    logging.warning("All attempts failed—using fallback")
                     self.valid_symbols = [
                         'XBT/USD', 'ETH/USD', 'XRP/USD', 'LTC/USD', 'BCH/USD',
                         'ADA/USD', 'DOT/USD', 'LINK/USD', 'XLM/USD', 'EOS/USD'
                     ]
-                    logging.info(f"Using fallback symbols after retries: {self.valid_symbols}")
+                    self.markets = {
+                        'XBT/USD': {'id': 'XXBTZUSD', 'symbol': 'XBT/USD', 'base': 'XBT', 'quote': 'USD', 'active': True},
+                        'ETH/USD': {'id': 'XETHZUSD', 'symbol': 'ETH/USD', 'base': 'ETH', 'quote': 'USD', 'active': True},
+                        'XRP/USD': {'id': 'XXRPZUSD', 'symbol': 'XRP/USD', 'base': 'XRP', 'quote': 'USD', 'active': True},
+                        'LTC/USD': {'id': 'XLTCZUSD', 'symbol': 'LTC/USD', 'base': 'LTC', 'quote': 'USD', 'active': True},
+                        'BCH/USD': {'id': 'XBCHZUSD', 'symbol': 'BCH/USD', 'base': 'BCH', 'quote': 'USD', 'active': True},
+                        'ADA/USD': {'id': 'ADAUSD', 'symbol': 'ADA/USD', 'base': 'ADA', 'quote': 'USD', 'active': True},
+                        'DOT/USD': {'id': 'DOTUSD', 'symbol': 'DOT/USD', 'base': 'DOT', 'quote': 'USD', 'active': True},
+                        'LINK/USD': {'id': 'LINKUSD', 'symbol': 'LINK/USD', 'base': 'LINK', 'quote': 'USD', 'active': True},
+                        'XLM/USD': {'id': 'XXLMZUSD', 'symbol': 'XLM/USD', 'base': 'XLM', 'quote': 'USD', 'active': True},
+                        'EOS/USD': {'id': 'EOSUSD', 'symbol': 'EOS/USD', 'base': 'EOS', 'quote': 'USD', 'active': True}
+                    }
+                    logging.info(f"Using fallback symbols: {self.valid_symbols}")
         self.data = {}
         self.closes = {}
         self.peaks = {}
