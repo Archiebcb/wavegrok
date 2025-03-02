@@ -25,6 +25,7 @@ import pickle
 import time
 import traceback
 from threading import Lock
+import urllib.parse
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO)
@@ -35,9 +36,14 @@ app = Flask(__name__)
 class WaveGrok:
     def __init__(self, exchange_name="kraken"):
         self.exchange = getattr(ccxt, exchange_name)({'enableRateLimit': True})
-        self.markets = self.exchange.load_markets()
-        self.valid_symbols = list(self.markets.keys())
-        logging.info(f"Loaded {len(self.valid_symbols)} valid symbols: {self.valid_symbols}")
+        try:
+            self.markets = self.exchange.load_markets()
+            self.valid_symbols = list(self.markets.keys())
+            logging.info(f"Loaded {len(self.valid_symbols)} valid symbols from Kraken: {self.valid_symbols[:10]}...")
+        except Exception as e:
+            logging.error(f"Failed to load markets: {str(e)}\n{traceback.format_exc()}")
+            self.valid_symbols = ['XBT/USD', 'ETH/USD', 'XRP/USD']  # Fallback
+            logging.info(f"Using fallback symbols: {self.valid_symbols}")
         self.data = {}
         self.closes = {}
         self.peaks = {}
@@ -57,13 +63,15 @@ class WaveGrok:
         self.last_cache_time = {}
 
     def _normalize_symbol(self, symbol):
-        """Normalize symbol to Kraken format (e.g., BTC/USDT -> XBT/USD)."""
-        symbol = symbol.upper()
+        """Normalize symbol to Kraken format."""
+        original_symbol = symbol
+        symbol = urllib.parse.unquote(symbol).upper()  # Decode %2F to /
         if symbol == "BTC/USDT" or symbol == "BTCUSD":
-            return "XBT/USD"
-        if symbol == "XBTUSDT":
-            return "XBT/USD"
-        return symbol  # Assume it’s already in Kraken format if not matched
+            symbol = "XBT/USD"
+        elif symbol == "XBTUSDT":
+            symbol = "XBT/USD"
+        logging.debug(f"Normalized symbol: {original_symbol} -> {symbol}")
+        return symbol
 
     def _init_rf_model(self):
         X = np.array([
@@ -538,7 +546,7 @@ def get_chart(timeframe):
         logging.error(f"Error in /chart: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": f"Server error: {str(e)}"}), 500
 
-@app.route('/price/<symbol>')
+@app.route('/price/<path:symbol>')
 def get_price(symbol):
     try:
         logging.info(f"Received request for /price/{symbol}")
@@ -550,7 +558,7 @@ def get_price(symbol):
         if normalized_symbol not in agent.valid_symbols:
             example_symbol = agent.valid_symbols[0] if agent.valid_symbols else 'XBT/USD'
             logging.error(f"Invalid symbol: {normalized_symbol}. Valid symbols: {agent.valid_symbols[:5]}...")
-            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a valid Kraken pair like '{example_symbol}'."}), 400
+            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like '{example_symbol}'."}), 400
         ticker = agent.exchange.fetch_ticker(normalized_symbol)
         price = ticker.get('last', None)
         if price is None:
@@ -582,7 +590,7 @@ def get_symbols():
         logging.error(f"Error fetching symbols: {str(e)}\n{traceback.format_exc()}")
         return jsonify({"error": "Unable to fetch symbols"}), 500
 
-@app.route('/sentiment/<symbol>')
+@app.route('/sentiment/<path:symbol>')
 def get_sentiment(symbol):
     try:
         logging.info(f"Received request for /sentiment/{symbol}")
@@ -596,7 +604,7 @@ def get_sentiment(symbol):
             base = base[1:]
         search_term = f"${base}"
         posts = []  # Placeholder for future X integration
-        sentiment_score = random.uniform(-1, 1)  # Temp random
+        sentiment_score = random.uniform(-1, 1)
         sentiment = "Bullish" if sentiment_score > 0.2 else "Bearish" if sentiment_score < -0.2 else "Neutral"
         logging.info(f"Sentiment for {normalized_symbol}: {sentiment} (score: {sentiment_score:.2f})")
         return jsonify({"sentiment": sentiment, "score": sentiment_score})
