@@ -33,8 +33,9 @@ app = Flask(__name__)
 class WaveGrok:
     def __init__(self, exchange_name="kraken"):
         self.exchange = getattr(ccxt, exchange_name)({'enableRateLimit': True})
-        self.markets = self.exchange.load_markets()  # Load all market pairs
-        self.valid_symbols = list(self.markets.keys())  # e.g., ['XXBTZUSD', 'XADAUSDT']
+        self.markets = self.exchange.load_markets()
+        self.valid_symbols = list(self.markets.keys())
+        logging.info(f"Loaded {len(self.valid_symbols)} valid symbols: {self.valid_symbols[:10]}...")  # Log first 10 for debug
         self.data = {}
         self.closes = {}
         self.peaks = {}
@@ -99,14 +100,12 @@ class WaveGrok:
         logging.debug(f"Fetching data for {symbol}, {timeframe}, limit {limit}")
         if symbol not in self.valid_symbols:
             logging.error(f"Invalid symbol: {symbol}")
-            return f"Invalid ticker '{symbol}'. Use a valid Kraken pair like 'XXBTZUSD' or 'XADAUSDT'. See /symbols for options."
-
+            return f"Invalid ticker '{symbol}'. Use a valid Kraken pair from /symbols."
         cached_data = self._load_cache(symbol, timeframe)
         if cached_data is not None:
             self.data[timeframe] = cached_data
             self.closes[timeframe] = cached_data['close'].values
             return f"Loaded {limit} {timeframe} candles for {symbol} from cache."
-
         for attempt in range(3):
             try:
                 timeframe_map = {'1m': '1m', '5m': '5m', '15m': '15m', '30m': '30m', '1h': '1h', '4h': '4h', '1d': '1d'}
@@ -115,7 +114,6 @@ class WaveGrok:
                 df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')
                 df.set_index('timestamp', inplace=True)
-
                 df['momentum'] = df['close'].pct_change()
                 df['volume_change'] = df['volume'].pct_change()
                 df['sma_20'] = SMAIndicator(df['close'], window=20).sma_indicator()
@@ -164,11 +162,9 @@ class WaveGrok:
                 df['pivot_high'] = df['high'].rolling(window=5, center=True).max()
                 df['pivot_low'] = df['low'].rolling(window=5, center=True).min()
                 df['moon_phase'] = self._get_moon_phase(df.index[-1])
-
                 df.dropna(how='all', inplace=True)
                 if df.empty:
                     return f"No valid data for {symbol} on {timeframe} after cleaning."
-
                 self.data[timeframe] = df
                 self.closes[timeframe] = df['close'].values
                 self._save_cache(symbol, timeframe, df)
@@ -244,22 +240,17 @@ class WaveGrok:
         if df.empty:
             logging.error(f"No data to plot for {timeframe}")
             return None
-
         if indicators is None:
             indicators = ['peaks', 'troughs', 'sma_20', 'sma_50', 'ema_9', 'rsi', 'macd', 'bb', 'fib', 'ichimoku']
-
         closes = df['close'].values
         peaks, _ = find_peaks(closes, distance=3, prominence=closes.std()/10)
         troughs, _ = find_peaks(-closes, distance=3, prominence=closes.std()/10)
-
         candle_data = df[['open', 'high', 'low', 'close', 'volume']].copy()
         candle_data.columns = ['Open', 'High', 'Low', 'Close', 'Volume']
-
         peak_data = np.full(len(df), np.nan)
         trough_data = np.full(len(df), np.nan)
         peak_data[peaks] = df['close'].iloc[peaks]
         trough_data[troughs] = df['close'].iloc[troughs]
-
         apdict = []
         if 'peaks' in indicators:
             apdict.append(mpf.make_addplot(peak_data, type='scatter', markersize=100, marker='x', color='lime', label='Peaks'))
@@ -287,7 +278,6 @@ class WaveGrok:
                 mpf.make_addplot(df['ichimoku_a'], color='red', linestyle='-', label='Ichimoku A'),
                 mpf.make_addplot(df['ichimoku_b'], color='green', linestyle='-', label='Ichimoku B'),
             ])
-
         panels = []
         if 'rsi' in indicators:
             panels.append(mpf.make_addplot(df['rsi'], panel=1, color='purple', ylabel='RSI'))
@@ -297,7 +287,6 @@ class WaveGrok:
                 mpf.make_addplot(df['macd_signal'], panel=2, color='orange'),
             ])
         apdict.extend(panels)
-
         buf = io.BytesIO()
         mpf.plot(
             candle_data,
@@ -342,7 +331,7 @@ class WaveGrok:
 
     def auto_trade(self, symbol, action, price, confidence):
         trade_size = 1000 * (1 + random.uniform(0, 0.5) if confidence > 0.85 else 1)
-        if action == "Buy" and self.portfolio["cash"] >= trade_size:
+        if action == "Buy" and self-die.portfolio["cash"] >= trade_size:
             units = trade_size / price
             self.trades.append({"symbol": symbol, "entry_price": price, "units": units, "time": datetime.now(), "confidence": confidence})
             self.portfolio["cash"] -= trade_size
@@ -373,7 +362,7 @@ class WaveGrok:
     def analyze_waves(self, symbol, primary_tf, secondary_tf):
         logging.debug(f"Analyzing waves for {symbol}, {primary_tf}, {secondary_tf}")
         if symbol not in self.valid_symbols:
-            return f"Invalid symbol '{symbol}'. Use a valid Kraken pair like 'XXBTZUSD' or 'XADAUSDT'."
+            return f"Invalid symbol '{symbol}'. Use a valid Kraken pair like '{self.valid_symbols[0]}'."
         if primary_tf not in self.data:
             return f"No data for {primary_tf}—fetch some first!"
         df = self.data[primary_tf]
@@ -382,7 +371,6 @@ class WaveGrok:
         troughs = self.troughs.get(primary_tf, [])
         if len(peaks) < 2 or len(troughs) < 2:
             return f"Not enough peaks or troughs in {primary_tf}."
-
         features = [
             df['momentum'].iloc[-1] or 0, df['rsi'].iloc[-1] or 0, df['macd'].iloc[-1] or 0,
             df['bb_width'].iloc[-1] or 0, df['atr'].iloc[-1] or 0, df['adx'].iloc[-1] or 0,
@@ -391,31 +379,26 @@ class WaveGrok:
             df['obv'].diff().iloc[-1] or 0, df['adl'].diff().iloc[-1] or 0, df['williams_r'].iloc[-1] or 0,
             df['cmf'].iloc[-1] or 0, df['force'].iloc[-1] or 0
         ]
-
         rf_pred = self.rf_model.predict([features])[0]
         lstm_input = np.array(df[['momentum', 'rsi', 'macd', 'bb_width', 'atr', 'adx', 'stoch_k', 'cci',
                                   'ichimoku_cloud', 'vwap_diff', 'close', 'volume_change']].iloc[-10:].fillna(0)).reshape(1, 10, 12)
         lstm_pred = np.argmax(self.lstm_model.predict(lstm_input, verbose=0))
         wave_labels = ["Wave 1", "Wave 2", "Wave 3", "Wave 4", "Wave 5", "Wave A", "Wave B", "Wave C"]
         current_wave = wave_labels[lstm_pred] if random.random() > 0.3 else rf_pred
-
         direction = "Up" if current_wave in ["Wave 1", "Wave 3", "Wave 5"] else "Down" if current_wave in ["Wave A", "Wave C"] else "Sideways"
         fib_targets = {
             "Buy": df['fib_382'].iloc[-1] if direction == "Up" else df['fib_618'].iloc[-1],
             "Sell": df['fib_618'].iloc[-1] if direction == "Up" else df['fib_382'].iloc[-1],
             "Stop": df['ema_50'].iloc[-1] if direction == "Up" else df['ema_50'].iloc[-1] * 1.02
         }
-
         signals = {
             "Trend": "Bullish" if df['ema_9'].iloc[-1] > df['ema_21'].iloc[-1] and df['adx'].iloc[-1] > 25 else "Bearish" if df['ema_9'].iloc[-1] < df['ema_21'].iloc[-1] else "Neutral",
             "Momentum": "Overbought" if df['rsi'].iloc[-1] > 70 or df['stoch_k'].iloc[-1] > 80 else "Oversold" if df['rsi'].iloc[-1] < 30 else "Neutral",
             "Volatility": "Breakout" if df['bb_width'].iloc[-1] < df['bb_width'].mean() * 0.5 else "Range",
             "Volume": "Accumulation" if df['obv'].diff().iloc[-1] > 0 else "Distribution"
         }
-
         sma_cross = "Bullish Crossover" if df['sma_50'].iloc[-1] > df['sma_200'].iloc[-1] and df['sma_50'].iloc[-2] <= df['sma_200'].iloc[-2] else \
                     "Bearish Crossover" if df['sma_50'].iloc[-1] < df['sma_200'].iloc[-1] and df['sma_50'].iloc[-2] >= df['sma_200'].iloc[-2] else "No Crossover"
-
         state = (current_wave, direction, df['rsi'].iloc[-1] > 70, df['macd'].iloc[-1] > df['macd_signal'].iloc[-1],
                  "Above" if closes[-1] > df['bb_upper'].iloc[-1] else "Below" if closes[-1] < df['bb_lower'].iloc[-1] else "Within",
                  *self.get_meme_hype(symbol), df['adx'].iloc[-1] > 25)
@@ -425,7 +408,6 @@ class WaveGrok:
         trade_msg, reward = self.auto_trade(symbol, action, closes[-1], confidence)
         self.update_q_table(state, action, reward, state)
         self.epsilon = max(0.1, self.epsilon * 0.995)
-
         rsi_value = df['rsi'].iloc[-1]
         rsi_signal = "Overbought (Sell)" if rsi_value > 70 else "Oversold (Buy)" if rsi_value < 30 else "Neutral"
         atr_value = df['atr'].iloc[-1]
@@ -545,8 +527,9 @@ def get_price(symbol):
     try:
         logging.debug(f"Fetching price for {symbol}")
         if symbol not in agent.valid_symbols:
+            example_symbol = agent.valid_symbols[0] if agent.valid_symbols else 'XXBTZUSD'
             logging.error(f"Invalid symbol for price fetch: {symbol}")
-            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like 'XXBTZUSD'."}), 400
+            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like '{example_symbol}'."}), 400
         ticker = agent.exchange.fetch_ticker(symbol)
         price = ticker.get('last', None)
         if price is None:
@@ -579,24 +562,15 @@ def get_sentiment(symbol):
     try:
         logging.debug(f"Fetching sentiment for {symbol}")
         if symbol not in agent.valid_symbols:
+            example_symbol = agent.valid_symbols[0] if agent.valid_symbols else 'XXBTZUSD'
             logging.error(f"Invalid symbol for sentiment: {symbol}")
-            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like 'XXBTZUSD'."}), 400
-
+            return jsonify({"error": f"Invalid symbol '{symbol}'. Use a Kraken pair like '{example_symbol}'."}), 400
         base = agent.markets[symbol]['base']
         if base.startswith('X'):
             base = base[1:]
         search_term = f"${base}"
-
-        posts = []  # Placeholder for X search
-        sentiment_score = 0
-        if posts:
-            positive = sum(1 for p in posts if "bull" in p.lower() or "up" in p.lower())
-            negative = sum(1 for p in posts if "bear" in p.lower() or "down" in p.lower())
-            total = positive + negative
-            sentiment_score = (positive - negative) / total if total > 0 else 0
-        else:
-            sentiment_score = random.uniform(-1, 1)
-
+        posts = []  # Placeholder
+        sentiment_score = random.uniform(-1, 1)
         sentiment = "Bullish" if sentiment_score > 0.2 else "Bearish" if sentiment_score < -0.2 else "Neutral"
         logging.info(f"Sentiment for {symbol}: {sentiment} (score: {sentiment_score:.2f})")
         return jsonify({"sentiment": sentiment, "score": sentiment_score})
